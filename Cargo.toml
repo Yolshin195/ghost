@@ -1,0 +1,18 @@
+[package]
+name = "ghost"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt"] }
+
+[build-dependencies]
+# rcgen — генерация сертификата только во время сборки,
+# в финальный бинарник не попадает
+rcgen = "0.13"
+time  = { version = "0.3", features = ["std"] }
