@@ -20,7 +20,7 @@ def load_model():
     from faster_whisper import WhisperModel
     print("Загрузка модели biodatlab/whisper-th-large-v3 ...")
     model = WhisperModel(
-        "biodatlab/whisper-th-large-v3",
+        "Vinxscribe/biodatlab-whisper-th-large-v3-faster",
         device="cuda" if _has_cuda() else "cpu",
         compute_type="float16" if _has_cuda() else "int8",
     )
