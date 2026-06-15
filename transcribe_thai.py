@@ -56,6 +56,49 @@ def _has_cuda():
     except Exception:
         return False
 
+# ─── Фикс WebM duration ──────────────────────────────────────────────────────
+
+def fix_webm_duration(webm_path: Path) -> Path:
+    """
+    MediaRecorder не пишет duration в заголовок WebM (всегда Infinity).
+    Из-за этого:
+      - браузер показывает полосу прокрутки всегда в конце
+      - Whisper получает файл без временной шкалы → все сегменты в одной точке
+
+    Фикс: перекодируем через ffmpeg с remux (копируем потоки без перекодирования).
+    Если ffmpeg не установлен — возвращаем оригинал.
+    """
+    import subprocess, shutil, tempfile
+
+    if not shutil.which("ffmpeg"):
+        return webm_path  # ffmpeg не найден — работаем как раньше
+
+    fixed_path = webm_path.with_name(webm_path.stem + "_fixed.webm")
+    if fixed_path.exists():
+        return fixed_path
+
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", str(webm_path),
+                "-c", "copy",          # без перекодирования — просто remux
+                "-fflags", "+genpts",  # генерировать PTS если отсутствуют
+                str(fixed_path),
+            ],
+            capture_output=True,
+            timeout=60,
+        )
+        if result.returncode == 0 and fixed_path.exists():
+            return fixed_path
+        else:
+            if fixed_path.exists():
+                fixed_path.unlink()
+            return webm_path
+    except Exception:
+        return webm_path
+
+
 # ─── Транскрибация одного файла ───────────────────────────────────────────────
 
 def transcribe_file(model, webm_path: Path) -> Path | None:
@@ -68,9 +111,12 @@ def transcribe_file(model, webm_path: Path) -> Path | None:
     print(f"  → {webm_path.name}", end=" ", flush=True)
     t0 = time.time()
 
+    # Фикс duration перед транскрибацией
+    input_path = fix_webm_duration(webm_path)
+
     try:
         segments, info = model.transcribe(
-            str(webm_path),
+            str(input_path),
             language="th",
             beam_size=5,
             vad_filter=True,
@@ -99,10 +145,16 @@ def transcribe_file(model, webm_path: Path) -> Path | None:
             txt_path.write_text("", encoding="utf-8")
             print(f"~  тишина / нет речи | {elapsed:.1f}с")
 
+        # Удаляем временный fixed файл после транскрибации
+        if input_path != webm_path and input_path.exists():
+            input_path.unlink()
+
         return txt_path
 
     except Exception as e:
         print(f"✗  ошибка: {e}")
+        if input_path != webm_path and input_path.exists():
+            input_path.unlink()
         return None
 
 # ─── Пакетная обработка папки ─────────────────────────────────────────────────
