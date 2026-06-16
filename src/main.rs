@@ -1,5 +1,6 @@
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::Query,
     response::{Html, IntoResponse},
     routing::get,
     Json, Router,
@@ -11,6 +12,7 @@ use std::{
     path::PathBuf,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
+    collections::HashMap,
 };
 use tokio::{
     fs::{self, File},
@@ -19,6 +21,7 @@ use tokio::{
     time::timeout,
 };
 use tracing::{error, info};
+
 
 const CHUNK_DURATION_SECS: u64 = 120;
 const OUTPUT_DIR: &str = "recordings";
@@ -1096,6 +1099,186 @@ setInterval(load, 15000);
 
 async fn transcripts_page() -> impl IntoResponse { Html(TRANSCRIPTS_HTML) }
 
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ПАТЧ К СЕРВЕРУ (main.rs)
+//
+// Добавить этот код для поддержки консольного клиента.
+// Консольный клиент шлёт raw PCM f32-le по ws/audio-pcm?sr=16000&ch=1
+// Сервер оборачивает в валидный .wav и сохраняет рядом с .webm сегментами.
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── 1. Добавить в Cargo.toml (зависимости сервера) ───────────────────────
+//
+// [dependencies]
+// axum          = { version = "0.7", features = ["ws"] }
+// # ... остальные как были ...
+//
+// (ничего нового не нужно — WAV пишем руками)
+
+// ── 2. Новые типы / функции — вставить перед fn main() ───────────────────
+
+
+
+/// Строит WAV-заголовок для PCM f32le.
+/// data_bytes — размер секции data (может быть 0 при стриминге — обновим потом).
+fn make_wav_header(sample_rate: u32, channels: u16, data_bytes: u32) -> Vec<u8> {
+    let byte_rate  = sample_rate * channels as u32 * 4;
+    let chunk_size = 36 + data_bytes;
+
+    let mut h = Vec::with_capacity(44);
+    h.extend_from_slice(b"RIFF");
+    h.extend_from_slice(&chunk_size.to_le_bytes());
+    h.extend_from_slice(b"WAVE");
+    h.extend_from_slice(b"fmt ");
+    h.extend_from_slice(&16u32.to_le_bytes());           // subchunk size
+    h.extend_from_slice(&3u16.to_le_bytes());            // IEEE float PCM = 3
+    h.extend_from_slice(&channels.to_le_bytes());
+    h.extend_from_slice(&sample_rate.to_le_bytes());
+    h.extend_from_slice(&byte_rate.to_le_bytes());
+    h.extend_from_slice(&(channels * 4).to_le_bytes());  // block align
+    h.extend_from_slice(&32u16.to_le_bytes());           // bits per sample
+    h.extend_from_slice(b"data");
+    h.extend_from_slice(&data_bytes.to_le_bytes());
+    h
+}
+
+/// Хендлер апгрейда WebSocket для PCM-клиента.
+/// Query-параметры: ?sr=16000&ch=1  (частота и число каналов)
+async fn ws_pcm_handler(
+    ws: WebSocketUpgrade,
+    Query(params): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let sample_rate: u32 = params
+        .get("sr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(16000);
+    let channels: u16 = params
+        .get("ch")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+
+    ws.on_upgrade(move |socket| handle_pcm_socket(socket, sample_rate, channels))
+}
+
+async fn handle_pcm_socket(socket: WebSocket, sample_rate: u32, channels: u16) {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let session_id = format!("cli_{ts}");
+    info!("PCM сессия: {session_id}  ({sample_rate} Гц, {channels} кан.)");
+
+    if let Err(e) = fs::create_dir_all(OUTPUT_DIR).await {
+        error!("Не удалось создать {OUTPUT_DIR}: {e}");
+        return;
+    }
+
+    let (mut sender, mut receiver) = socket.split();
+
+    // Буфер сегмента (только PCM-данные, без WAV-заголовка)
+    let mut pcm_buf: Vec<u8> = Vec::new();
+    let mut started_at = std::time::Instant::now();
+    let mut file_index: u32 = 0;
+
+    /// Сбрасывает буфер в .wav файл, возвращает (filename, size_kb)
+    async fn flush_wav(
+        session_id: &str,
+        file_index: &mut u32,
+        pcm_buf: &mut Vec<u8>,
+        started_at: &mut std::time::Instant,
+        sample_rate: u32,
+        channels: u16,
+    ) -> Option<(String, u64)> {
+        if pcm_buf.is_empty() { return None; }
+
+        *file_index += 1;
+        let filename = format!(
+            "{}/{}_seg{:04}.wav",
+            OUTPUT_DIR, session_id, file_index
+        );
+
+        let pcm_data = std::mem::take(pcm_buf);
+        let data_bytes = pcm_data.len() as u32;
+        let mut wav = make_wav_header(sample_rate, channels, data_bytes);
+        wav.extend_from_slice(&pcm_data);
+
+        let size_kb = wav.len() as u64 / 1024;
+
+        match File::create(&filename).await {
+            Ok(mut f) => {
+                if let Err(e) = f.write_all(&wav).await {
+                    error!("Ошибка записи {filename}: {e}");
+                    return None;
+                }
+                info!("WAV сохранён: {filename} ({size_kb} KB)");
+            }
+            Err(e) => { error!("Создание {filename}: {e}"); return None; }
+        }
+
+        *started_at = std::time::Instant::now();
+        let short = PathBuf::from(&filename)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&filename)
+            .to_string();
+        Some((short, size_kb))
+    }
+
+    loop {
+        let msg = match timeout(Duration::from_secs(30), receiver.next()).await {
+            Ok(Some(Ok(m)))  => m,
+            Ok(Some(Err(e))) => { error!("PCM WS: {e}"); break; }
+            Ok(None)         => { info!("PCM клиент отключился"); break; }
+            Err(_)           => { error!("PCM таймаут"); break; }
+        };
+
+        match msg {
+            Message::Binary(data) => {
+                pcm_buf.extend_from_slice(&data);
+
+                // Сегментируем по времени (те же 2 минуты)
+                if started_at.elapsed() >= Duration::from_secs(CHUNK_DURATION_SECS) {
+                    if let Some((fname, kb)) = flush_wav(
+                        &session_id,
+                        &mut file_index,
+                        &mut pcm_buf,
+                        &mut started_at,
+                        sample_rate,
+                        channels,
+                    )
+                    .await
+                    {
+                        let json = format!(
+                            r#"{{"type":"file_saved","filename":"{fname}","size_kb":{kb}}}"#
+                        );
+                        if sender.send(Message::Text(json)).await.is_err() { break; }
+                    }
+                }
+            }
+            Message::Close(_) => { info!("PCM Close frame"); break; }
+            Message::Ping(p)  => { let _ = sender.send(Message::Pong(p)).await; }
+            _ => {}
+        }
+    }
+
+    // Финальный flush
+    if !pcm_buf.is_empty() {
+        info!("Финальный WAV flush ({} байт)...", pcm_buf.len());
+        flush_wav(
+            &session_id,
+            &mut file_index,
+            &mut pcm_buf,
+            &mut started_at,
+            sample_rate,
+            channels,
+        )
+        .await;
+    }
+    info!("PCM сессия {session_id} завершена");
+}
+
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
@@ -1108,6 +1291,7 @@ async fn main() {
     let app = Router::new()
         .route("/",                get(index))
         .route("/ws/audio",        get(ws_handler))
+        .route("/ws/audio-pcm",    get(ws_pcm_handler))
         .route("/transcripts",     get(transcripts_page))
         .route("/api/transcripts", get(api_transcripts));
 

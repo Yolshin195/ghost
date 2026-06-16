@@ -1,19 +1,47 @@
 [package]
-name = "ghost"
+name    = "ghost"
 version = "0.1.0"
-edition = "2024"
-
+edition = "2021"
+# ── Бинарники ─────────────────────────────────────────────────────────────────
+[[bin]]
+name = "ghost"
+path = "src/main.rs"
+[[bin]]
+name = "recorder"
+path = "src/bin/recorder.rs"
+# ── Зависимости ───────────────────────────────────────────────────────────────
 [dependencies]
-axum = { version = "0.7", features = ["ws"] }
-axum-server = { version = "0.7", features = ["tls-rustls"] }
-tokio = { version = "1", features = ["full"] }
+# Async runtime
+tokio        = { version = "1", features = ["full"] }
 futures-util = "0.3"
-tracing = "0.1"
+# Сериализация (сервер)
+serde = { version = "1", features = ["derive"] }
+# Логи (сервер)
+tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }
-serde = { version = "1",   features = ["derive"] }
-
+# HTTP / WebSocket (сервер)
+axum        = { version = "0.7", features = ["ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+# WebSocket-клиент (консольный клиент)
+# native-tls нужен для --insecure (self-signed cert без dangerous_configuration)
+# rustls-tls-native-roots нужен для обычного TLS
+tokio-tungstenite = { version = "0.21", features = [
+    "rustls-tls-native-roots",
+] }
+# TLS (консольный клиент, secure режим)
+rustls              = "0.22"
+rustls-native-certs = "0.7"
+# TLS (консольный клиент, --insecure режим)
+native-tls = "0.2"
+# Аудио захват (консольный клиент)
+cpal = "0.15"
+# CLI парсер (консольный клиент)
+clap = { version = "4", features = ["derive"] }
+# Удобные ошибки (консольный клиент)
+anyhow = "1"
+# ── Build-зависимости ─────────────────────────────────────────────────────────
 [build-dependencies]
-# rcgen — генерация сертификата только во время сборки,
-# в финальный бинарник не попадает
 rcgen = "0.13"
 time  = { version = "0.3", features = ["std"] }
+# ── Linux: ALSA для CPAL ─────────────────────────────────────────────────────
+# sudo apt install libasound2-dev pkg-config
