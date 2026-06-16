@@ -805,9 +805,14 @@ async fn api_transcripts() -> impl IntoResponse {
 
     while let Ok(Some(entry)) = rd.next_entry().await {
         let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".webm") { continue; }
 
-        // rec_1781188527_seg0001.webm  →  session_id = "rec_1781188527"
+        let is_webm = name.ends_with(".webm");
+        let is_wav  = name.ends_with(".wav");
+        if !is_webm && !is_wav { continue; }
+
+        let ext = if is_wav { ".wav" } else { ".webm" };
+
+        // rec_1781188527_seg0001.webm / cli_1781188527_seg0001.wav
         let Some(session_id) = name
             .rsplitn(2, "_seg")
             .last()
@@ -816,14 +821,13 @@ async fn api_transcripts() -> impl IntoResponse {
 
         // индекс сегмента
         let index: u32 = name
-            .trim_end_matches(".webm")
+            .trim_end_matches(ext)
             .rsplitn(2, "_seg")
             .next()
             .and_then(|s| s.parse().ok())
             .unwrap_or(0);
 
-        // читаем .txt если есть
-        let txt_path = format!("{}/{}", OUTPUT_DIR, name.replace(".webm", ".txt"));
+        let txt_path = format!("{}/{}", OUTPUT_DIR, name.replace(ext, ".txt"));
         let text = tokio::fs::read_to_string(&txt_path).await.ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
@@ -836,10 +840,9 @@ async fn api_transcripts() -> impl IntoResponse {
         });
     }
 
-    // Сортируем сегменты внутри сессий, собираем итог
     let result: Vec<Session> = sessions
         .into_iter()
-        .rev()                          // новые сессии первыми
+        .rev()
         .map(|(id, mut segs)| {
             segs.sort_by_key(|s| s.index);
             let total_text = segs.iter()

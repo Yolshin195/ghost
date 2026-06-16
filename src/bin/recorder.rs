@@ -33,7 +33,6 @@ use tokio_tungstenite::{
 use futures_util::{SinkExt, StreamExt};
 use rustls::{ClientConfig, RootCertStore};
 use std::sync::Arc as StdArc;
-use native_tls::TlsConnector as NativeTlsConnector;
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
