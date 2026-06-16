@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-Транскрибация тайских аудио файлов (.webm) через faster-whisper.
+Транскрибация тайских аудио файлов (.webm / .wav) через faster-whisper.
 Модель: Vinxscribe/biodatlab-whisper-th-large-v3-faster
 
 Использование:
     python transcribe_thai.py recordings/          # вся папка
     python transcribe_thai.py recordings/ --watch  # следить за новыми файлами
     python transcribe_thai.py rec_XXX_seg0001.webm # один файл
+    python transcribe_thai.py cli_XXX_seg0001.wav  # один wav файл
 """
 
 import sys
@@ -19,11 +20,15 @@ from pathlib import Path
 MODEL_ID = "Vinxscribe/biodatlab-whisper-th-large-v3-faster"
 CACHE_DIR = Path.home() / ".cache" / "huggingface" / "hub"
 
+SUPPORTED_EXTENSIONS = {".webm", ".wav"}
+
+
 def _model_cached() -> bool:
     """Проверяет есть ли модель в локальном кэше."""
     slug = "models--" + MODEL_ID.replace("/", "--")
     model_bin = CACHE_DIR / slug
     return model_bin.exists() and any(model_bin.rglob("model.bin"))
+
 
 def load_model():
     from faster_whisper import WhisperModel
@@ -43,6 +48,7 @@ def load_model():
     print("\nМодель готова.\n")
     return model
 
+
 def _has_cuda():
     try:
         import torch
@@ -56,19 +62,18 @@ def _has_cuda():
     except Exception:
         return False
 
+
 # ─── Фикс WebM duration ──────────────────────────────────────────────────────
 
 def fix_webm_duration(webm_path: Path) -> Path:
     """
     MediaRecorder не пишет duration в заголовок WebM (всегда Infinity).
-    Из-за этого:
-      - браузер показывает полосу прокрутки всегда в конце
-      - Whisper получает файл без временной шкалы → все сегменты в одной точке
+    Из-за этого Whisper получает файл без временной шкалы → все сегменты в одной точке.
 
     Фикс: перекодируем через ffmpeg с remux (копируем потоки без перекодирования).
     Если ffmpeg не установлен — возвращаем оригинал.
     """
-    import subprocess, shutil, tempfile
+    import subprocess, shutil
 
     if not shutil.which("ffmpeg"):
         return webm_path  # ffmpeg не найден — работаем как раньше
@@ -99,20 +104,36 @@ def fix_webm_duration(webm_path: Path) -> Path:
         return webm_path
 
 
+def prepare_input(audio_path: Path) -> tuple[Path, bool]:
+    """
+    Подготавливает файл к транскрибации.
+    Возвращает (путь_к_файлу, нужно_ли_удалить_после).
+    - .wav — читается напрямую, сервер пишет корректный заголовок
+    - .webm — прогоняется через fix_webm_duration
+    """
+    ext = audio_path.suffix.lower()
+    if ext == ".wav":
+        return audio_path, False
+    elif ext == ".webm":
+        fixed = fix_webm_duration(audio_path)
+        return fixed, (fixed != audio_path)
+    else:
+        return audio_path, False
+
+
 # ─── Транскрибация одного файла ───────────────────────────────────────────────
 
-def transcribe_file(model, webm_path: Path) -> Path | None:
-    txt_path = webm_path.with_suffix(".txt")
+def transcribe_file(model, audio_path: Path) -> Path | None:
+    txt_path = audio_path.with_suffix(".txt")
 
     if txt_path.exists():
-        print(f"  [пропуск] {webm_path.name} — txt уже существует")
+        print(f"  [пропуск] {audio_path.name} — txt уже существует")
         return txt_path
 
-    print(f"  → {webm_path.name}", end=" ", flush=True)
+    print(f"  → {audio_path.name}", end=" ", flush=True)
     t0 = time.time()
 
-    # Фикс duration перед транскрибацией
-    input_path = fix_webm_duration(webm_path)
+    input_path, should_delete = prepare_input(audio_path)
 
     try:
         segments, info = model.transcribe(
@@ -145,27 +166,40 @@ def transcribe_file(model, webm_path: Path) -> Path | None:
             txt_path.write_text("", encoding="utf-8")
             print(f"~  тишина / нет речи | {elapsed:.1f}с")
 
-        # Удаляем временный fixed файл после транскрибации
-        if input_path != webm_path and input_path.exists():
+        if should_delete and input_path.exists():
             input_path.unlink()
 
         return txt_path
 
     except Exception as e:
         print(f"✗  ошибка: {e}")
-        if input_path != webm_path and input_path.exists():
+        if should_delete and input_path.exists():
             input_path.unlink()
         return None
+
+
+# ─── Сбор файлов из папки ────────────────────────────────────────────────────
+
+def collect_audio_files(folder: Path) -> list[Path]:
+    """Собирает .webm и .wav файлы, сортирует по имени."""
+    files = []
+    for ext in SUPPORTED_EXTENSIONS:
+        files.extend(folder.glob(f"*{ext}"))
+    return sorted(set(files))
+
 
 # ─── Пакетная обработка папки ─────────────────────────────────────────────────
 
 def process_directory(model, folder: Path, skip_existing: bool = True):
-    files = sorted(folder.glob("*.webm"))
+    files = collect_audio_files(folder)
     if not files:
-        print(f"Нет .webm файлов в {folder}")
+        print(f"Нет аудио файлов ({', '.join(SUPPORTED_EXTENSIONS)}) в {folder}")
         return
 
-    print(f"Найдено файлов: {len(files)}\n")
+    webm_count = sum(1 for f in files if f.suffix == ".webm")
+    wav_count  = sum(1 for f in files if f.suffix == ".wav")
+    print(f"Найдено файлов: {len(files)}  (.webm: {webm_count}, .wav: {wav_count})\n")
+
     ok = err = skip = 0
 
     for f in files:
@@ -181,6 +215,7 @@ def process_directory(model, folder: Path, skip_existing: bool = True):
 
     print(f"\nГотово: {ok} обработано, {skip} пропущено, {err} ошибок")
 
+
 # ─── Режим слежения (--watch) ─────────────────────────────────────────────────
 
 def watch_directory(model, folder: Path, poll_interval: float = 5.0):
@@ -189,7 +224,7 @@ def watch_directory(model, folder: Path, poll_interval: float = 5.0):
 
     try:
         while True:
-            for f in sorted(folder.glob("*.webm")):
+            for f in collect_audio_files(folder):
                 txt = f.with_suffix(".txt")
                 if txt.exists():
                     continue
@@ -210,15 +245,27 @@ def watch_directory(model, folder: Path, poll_interval: float = 5.0):
     except KeyboardInterrupt:
         print("\nОстановлено.")
 
+
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Транскрибация тайских .webm через faster-whisper")
-    parser.add_argument("target", help="Папка с .webm файлами или один .webm файл")
-    parser.add_argument("--watch", "-w", action="store_true",
-                        help="Следить за папкой и транскрибировать новые файлы по мере появления")
-    parser.add_argument("--reprocess", action="store_true",
-                        help="Перезаписать уже существующие .txt файлы")
+    parser = argparse.ArgumentParser(
+        description="Транскрибация тайских .webm/.wav через faster-whisper"
+    )
+    parser.add_argument(
+        "target",
+        help="Папка с аудио файлами или один .webm/.wav файл"
+    )
+    parser.add_argument(
+        "--watch", "-w",
+        action="store_true",
+        help="Следить за папкой и транскрибировать новые файлы по мере появления"
+    )
+    parser.add_argument(
+        "--reprocess",
+        action="store_true",
+        help="Перезаписать уже существующие .txt файлы"
+    )
     args = parser.parse_args()
 
     target = Path(args.target)
@@ -230,8 +277,8 @@ def main():
     model = load_model()
 
     if target.is_file():
-        if target.suffix.lower() != ".webm":
-            print("Ошибка: файл должен быть .webm")
+        if target.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            print(f"Ошибка: файл должен быть одним из {SUPPORTED_EXTENSIONS}")
             sys.exit(1)
         transcribe_file(model, target)
 
