@@ -30,8 +30,71 @@ def _model_cached() -> bool:
     return model_bin.exists() and any(model_bin.rglob("model.bin"))
 
 
+def detect_device() -> tuple[str, str]:
+    """
+    Определяет лучшее доступное устройство для инференса.
+
+    Приоритет: CUDA (NVIDIA) → Metal (Apple Silicon) → CPU
+
+    Возвращает (device, compute_type).
+
+    CTranslate2 4.x поддерживает Metal через device="metal".
+    compute_type для Metal — "float16" (int8 не поддерживается).
+    """
+    import ctranslate2
+
+    # ── CUDA (NVIDIA GPU) ──────────────────────────────────────────────────────
+    try:
+        import torch
+        if torch.cuda.is_available():
+            name = torch.cuda.get_device_name(0)
+            return "cuda", "float16"
+    except ImportError:
+        pass
+
+    # ── Metal (Apple Silicon — M1/M2/M3/M4) ───────────────────────────────────
+    # CTranslate2 >= 4.0 поддерживает device="metal"
+    try:
+        supported = ctranslate2.get_supported_compute_types("metal")
+        if supported:
+            # float16 быстрее и точнее int8 на Metal
+            compute = "float16" if "float16" in supported else supported[0]
+            return "metal", compute
+    except Exception:
+        pass
+
+    # ── CPU (fallback) ────────────────────────────────────────────────────────
+    return "cpu", "int8"
+
+
+def _device_label(device: str, compute_type: str) -> str:
+    """Человекочитаемое название устройства для вывода."""
+    if device == "cuda":
+        try:
+            import torch
+            name = torch.cuda.get_device_name(0)
+            return f"CUDA  ({name}, {compute_type})"
+        except Exception:
+            return f"CUDA ({compute_type})"
+    elif device == "metal":
+        # Узнаём название чипа через platform
+        try:
+            import platform
+            chip = platform.processor() or "Apple Silicon"
+            return f"Metal ({chip}, {compute_type})"
+        except Exception:
+            return f"Metal (Apple Silicon, {compute_type})"
+    else:
+        import platform
+        cpu = platform.processor() or platform.machine() or "CPU"
+        return f"CPU   ({cpu}, {compute_type})"
+
+
 def load_model():
     from faster_whisper import WhisperModel
+
+    device, compute_type = detect_device()
+    label = _device_label(device, compute_type)
 
     cached = _model_cached()
     if cached:
@@ -40,27 +103,26 @@ def load_model():
         print(f"Скачиваем модель {MODEL_ID} (~3 GB), это займёт несколько минут...")
         print("Прогресс скачивания показывается ниже:\n")
 
-    model = WhisperModel(
-        MODEL_ID,
-        device="cuda" if _has_cuda() else "cpu",
-        compute_type="float16" if _has_cuda() else "int8",
-    )
-    print("\nМодель готова.\n")
+    print(f"Инференс: {label}")
+
+    try:
+        model = WhisperModel(
+            MODEL_ID,
+            device=device,
+            compute_type=compute_type,
+        )
+    except Exception as e:
+        # Metal может быть недоступен в старых версиях CTranslate2 — откатываемся на CPU
+        if device == "metal":
+            print(f"  ⚠  Metal недоступен ({e}), откат на CPU")
+            device, compute_type = "cpu", "int8"
+            print(f"Инференс: {_device_label(device, compute_type)}")
+            model = WhisperModel(MODEL_ID, device=device, compute_type=compute_type)
+        else:
+            raise
+
+    print("Модель готова.\n")
     return model
-
-
-def _has_cuda():
-    try:
-        import torch
-        return torch.cuda.is_available()
-    except ImportError:
-        pass
-    try:
-        import ctypes
-        ctypes.CDLL("libcuda.so")
-        return True
-    except Exception:
-        return False
 
 
 # ─── Фикс WebM duration ──────────────────────────────────────────────────────
@@ -73,10 +135,11 @@ def fix_webm_duration(webm_path: Path) -> Path:
     Фикс: перекодируем через ffmpeg с remux (копируем потоки без перекодирования).
     Если ffmpeg не установлен — возвращаем оригинал.
     """
-    import subprocess, shutil
+    import subprocess
+    import shutil
 
     if not shutil.which("ffmpeg"):
-        return webm_path  # ffmpeg не найден — работаем как раньше
+        return webm_path
 
     fixed_path = webm_path.with_name(webm_path.stem + "_fixed.webm")
     if fixed_path.exists():
@@ -87,8 +150,8 @@ def fix_webm_duration(webm_path: Path) -> Path:
             [
                 "ffmpeg", "-y",
                 "-i", str(webm_path),
-                "-c", "copy",          # без перекодирования — просто remux
-                "-fflags", "+genpts",  # генерировать PTS если отсутствуют
+                "-c", "copy",
+                "-fflags", "+genpts",
                 str(fixed_path),
             ],
             capture_output=True,
@@ -108,7 +171,7 @@ def prepare_input(audio_path: Path) -> tuple[Path, bool]:
     """
     Подготавливает файл к транскрибации.
     Возвращает (путь_к_файлу, нужно_ли_удалить_после).
-    - .wav — читается напрямую, сервер пишет корректный заголовок
+    - .wav  — читается напрямую (сервер пишет корректный заголовок)
     - .webm — прогоняется через fix_webm_duration
     """
     ext = audio_path.suffix.lower()

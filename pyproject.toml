@@ -1,10 +1,16 @@
 [project]
 name = "ghost"
 version = "0.1.0"
-description = "Add your description here"
+description = "Thai audio transcription tools"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "faster-whisper>=1.2.1",
     "tqdm>=4.68.2",
+]
+
+[project.optional-dependencies]
+# Apple Silicon Mac: uv sync --extra mac
+mac = [
+    "mlx-whisper>=0.4.0",
 ]
