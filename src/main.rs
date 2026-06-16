@@ -1123,7 +1123,7 @@ async fn transcripts_page() -> impl IntoResponse { Html(TRANSCRIPTS_HTML) }
 /// Строит WAV-заголовок для PCM f32le.
 /// data_bytes — размер секции data (может быть 0 при стриминге — обновим потом).
 fn make_wav_header(sample_rate: u32, channels: u16, data_bytes: u32) -> Vec<u8> {
-    let byte_rate  = sample_rate * channels as u32 * 4;
+    let byte_rate  = sample_rate * channels as u32 * 2; // 16-bit = 2 bytes
     let chunk_size = 36 + data_bytes;
 
     let mut h = Vec::with_capacity(44);
@@ -1131,13 +1131,13 @@ fn make_wav_header(sample_rate: u32, channels: u16, data_bytes: u32) -> Vec<u8> 
     h.extend_from_slice(&chunk_size.to_le_bytes());
     h.extend_from_slice(b"WAVE");
     h.extend_from_slice(b"fmt ");
-    h.extend_from_slice(&16u32.to_le_bytes());           // subchunk size
-    h.extend_from_slice(&3u16.to_le_bytes());            // IEEE float PCM = 3
+    h.extend_from_slice(&16u32.to_le_bytes());
+    h.extend_from_slice(&1u16.to_le_bytes());            // PCM int = 1
     h.extend_from_slice(&channels.to_le_bytes());
     h.extend_from_slice(&sample_rate.to_le_bytes());
     h.extend_from_slice(&byte_rate.to_le_bytes());
-    h.extend_from_slice(&(channels * 4).to_le_bytes());  // block align
-    h.extend_from_slice(&32u16.to_le_bytes());           // bits per sample
+    h.extend_from_slice(&(channels * 2).to_le_bytes());  // block align
+    h.extend_from_slice(&16u16.to_le_bytes());           // bits per sample
     h.extend_from_slice(b"data");
     h.extend_from_slice(&data_bytes.to_le_bytes());
     h
@@ -1182,48 +1182,95 @@ async fn handle_pcm_socket(socket: WebSocket, sample_rate: u32, channels: u16) {
     let mut file_index: u32 = 0;
 
     /// Сбрасывает буфер в .wav файл, возвращает (filename, size_kb)
-    async fn flush_wav(
-        session_id: &str,
-        file_index: &mut u32,
-        pcm_buf: &mut Vec<u8>,
-        started_at: &mut std::time::Instant,
-        sample_rate: u32,
-        channels: u16,
-    ) -> Option<(String, u64)> {
-        if pcm_buf.is_empty() { return None; }
+  async fn flush_wav(
+      session_id: &str,
+      file_index: &mut u32,
+      pcm_buf: &mut Vec<u8>,
+      started_at: &mut std::time::Instant,
+      sample_rate: u32,
+      channels: u16,
+  ) -> Option<(String, u64)> {
+      if pcm_buf.is_empty() { return None; }
 
-        *file_index += 1;
-        let filename = format!(
-            "{}/{}_seg{:04}.wav",
-            OUTPUT_DIR, session_id, file_index
-        );
+      *file_index += 1;
+      let filename = format!(
+          "{}/{}_seg{:04}.wav",
+          OUTPUT_DIR, session_id, file_index
+      );
 
-        let pcm_data = std::mem::take(pcm_buf);
-        let data_bytes = pcm_data.len() as u32;
-        let mut wav = make_wav_header(sample_rate, channels, data_bytes);
-        wav.extend_from_slice(&pcm_data);
+      let raw_bytes = std::mem::take(pcm_buf);
 
-        let size_kb = wav.len() as u64 / 1024;
+      // ── 1. Декодируем f32-le байты в сэмплы ──────────────────────────────
+      let mut samples: Vec<f32> = raw_bytes
+          .chunks_exact(4)
+          .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+          .collect();
 
-        match File::create(&filename).await {
-            Ok(mut f) => {
-                if let Err(e) = f.write_all(&wav).await {
-                    error!("Ошибка записи {filename}: {e}");
-                    return None;
-                }
-                info!("WAV сохранён: {filename} ({size_kb} KB)");
-            }
-            Err(e) => { error!("Создание {filename}: {e}"); return None; }
-        }
+      // ── 2. Ресемплинг в 16 000 Гц (если нужно) ───────────────────────────
+      // Простой linear interpolation — достаточно для речи.
+      let out_rate: u32 = 16_000;
+      let samples_16k: Vec<f32> = if sample_rate != out_rate {
+          let ratio = sample_rate as f64 / out_rate as f64;
+          let out_len = (samples.len() as f64 / ratio).ceil() as usize;
+          let mut out = Vec::with_capacity(out_len);
+          for i in 0..out_len {
+              let pos = i as f64 * ratio;
+              let lo  = pos.floor() as usize;
+              let hi  = (lo + 1).min(samples.len() - 1);
+              let t   = (pos - lo as f64) as f32;
+              out.push(samples[lo] * (1.0 - t) + samples[hi] * t);
+          }
+          out
+      } else {
+          samples.clone()
+      };
+      samples = samples_16k;
 
-        *started_at = std::time::Instant::now();
-        let short = PathBuf::from(&filename)
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or(&filename)
-            .to_string();
-        Some((short, size_kb))
-    }
+      // ── 3. Нормализация по пику ───────────────────────────────────────────
+      // Целевой пик -1 dBFS ≈ 0.891. Если сигнал уже громче — не трогаем.
+      const TARGET_PEAK: f32 = 0.891;
+      let peak = samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+      if peak > 1e-6 {
+          let gain = (TARGET_PEAK / peak).min(20.0); // ограничение ×20 (~26 dB)
+          for s in &mut samples { *s *= gain; }
+          let gain_db = 20.0 * gain.log10();
+          info!("Нормализация: peak={:.1} dBFS → gain +{:.1} dB",
+              20.0 * peak.log10(), gain_db);
+      }
+
+      // ── 4. Конвертация f32 → i16 ─────────────────────────────────────────
+      let pcm_i16: Vec<i16> = samples
+          .iter()
+          .map(|&s| (s.clamp(-1.0, 1.0) * 32767.0) as i16)
+          .collect();
+
+      let data_bytes = (pcm_i16.len() * 2) as u32; // 2 bytes per i16
+      let mut wav = make_wav_header(out_rate, channels, data_bytes);
+      for sample in &pcm_i16 {
+          wav.extend_from_slice(&sample.to_le_bytes());
+      }
+
+      let size_kb = wav.len() as u64 / 1024;
+
+      match File::create(&filename).await {
+          Ok(mut f) => {
+              if let Err(e) = f.write_all(&wav).await {
+                  error!("Ошибка записи {filename}: {e}");
+                  return None;
+              }
+              info!("WAV сохранён: {filename} ({size_kb} KB)  [{sample_rate}→{out_rate}Hz, нормализован]");
+          }
+          Err(e) => { error!("Создание {filename}: {e}"); return None; }
+      }
+
+      *started_at = std::time::Instant::now();
+      let short = PathBuf::from(&filename)
+          .file_name()
+          .and_then(|n| n.to_str())
+          .unwrap_or(&filename)
+          .to_string();
+      Some((short, size_kb))
+  }
 
     loop {
         let msg = match timeout(Duration::from_secs(30), receiver.next()).await {
