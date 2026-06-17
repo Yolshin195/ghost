@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ghost — Транскрипты</title>
+<style>
+/* ─── Дизайн-токены ─────────────────────────────────────────────────────── */
+:root {
+  --bg:          #0c0e12;
+  --surface:     #13161d;
+  --surface2:    #181c25;
+  --surface3:    #1e2330;
+  --border:      #252b3a;
+  --border-soft: #1a1f2c;
+
+  --accent:      #5b8dee;
+  --accent-dim:  #1a2a50;
+  --accent-glow: rgba(91,141,238,0.15);
+
+  --thai:        #e8d5a3;   /* тёплый кремово-золотой — тайский текст */
+  --thai-dim:    #9a8f75;
+  --ru:          #a8c8ff;   /* холодный голубой — русский текст */
+  --ru-dim:      #4a6080;
+
+  --green:       #3ecf8e;
+  --yellow:      #f0b429;
+  --red:         #e05555;
+  --red-dim:     #2a1212;
+
+  --text:        #c5cde0;
+  --text-dim:    #525d78;
+  --text-muted:  #363d52;
+
+  --mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
+  --sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  --radius:      10px;
+  --radius-sm:   6px;
+  --sidebar:     320px;
+}
+
+/* ─── Сброс и базовые стили ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+textarea { font-family: inherit; }
+a { color: inherit; text-decoration: none; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-soft); }
+
+/* ─── Шапка ─────────────────────────────────────────────────────────────── */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 20px;
+  height: 52px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  z-index: 100;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--accent);
+}
+
+.logo-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+.topbar-sep { flex: 1; }
+
+.topbar-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  transition: all 0.15s;
+}
+.topbar-btn:hover { color: var(--text); border-color: var(--accent); }
+.topbar-btn.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.topbar-btn.primary:hover { background: #22366a; }
+
+/* ─── Основной макет — три колонки ─────────────────────────────────────── */
+.layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ─── Сайдбар — список сессий ───────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar);
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.sidebar-head {
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+
+.sidebar-title {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  transition: border-color 0.15s;
+}
+.search-box:focus-within { border-color: var(--accent); }
+.search-box svg { color: var(--text-dim); flex-shrink: 0; }
+.search-box input {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 12px;
+  width: 100%;
+}
+.search-box input::placeholder { color: var(--text-dim); }
+
+.sessions-list {
+  overflow-y: auto;
+  flex: 1;
+  padding: 6px 8px;
+}
+
+.session-item {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s;
+  border: 1px solid transparent;
+  margin-bottom: 2px;
+}
+.session-item:hover { background: var(--surface2); }
+.session-item.active {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.session-item-id {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-item.active .session-item-id { color: var(--accent); }
+
+.session-item-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.meta-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--surface3);
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+.meta-badge.done { background: rgba(62,207,142,0.12); color: var(--green); }
+.meta-badge.partial { background: rgba(240,180,41,0.12); color: var(--yellow); }
+
+.session-item-progress {
+  margin-top: 6px;
+  height: 2px;
+  background: var(--border);
+  border-radius: 1px;
+  overflow: hidden;
+}
+.session-item-progress-fill {
+  height: 100%;
+  border-radius: 1px;
+  background: var(--green);
+  transition: width 0.3s;
+}
+
+.sessions-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/* ─── Основная панель — транскрипт ──────────────────────────────────────── */
+.main-panel {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-head {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+
+.panel-head-info { flex: 1; min-width: 0; }
+
+.panel-session-id {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-session-meta {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 2px;
+}
+
+.copy-all-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.copy-all-btn:hover { background: #7aaaf5; transform: translateY(-1px); }
+.copy-all-btn:active { transform: translateY(0); }
+.copy-all-btn.copied { background: var(--green); }
+
+.copy-thai-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--thai-dim);
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.copy-thai-btn:hover { border-color: var(--thai); color: var(--thai); }
+.copy-thai-btn.copied { border-color: var(--green); color: var(--green); }
+
+/* Вкладки сегментов */
+.segments-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 20px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.segments-tabs::-webkit-scrollbar { height: 0; }
+
+.seg-tab {
+  padding: 7px 14px;
+  font-size: 11px;
+  font-family: var(--mono);
+  font-weight: 500;
+  color: var(--text-dim);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  border: 1px solid transparent;
+  border-bottom: none;
+  position: relative;
+  bottom: -1px;
+  white-space: nowrap;
+  transition: all 0.12s;
+  background: var(--surface);
+}
+.seg-tab:hover { color: var(--text); background: var(--surface2); }
+.seg-tab.active {
+  color: var(--accent);
+  background: var(--bg);
+  border-color: var(--border);
+  border-bottom-color: var(--bg);
+}
+
+.seg-tab-dot {
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  margin-right: 5px;
+  background: var(--text-muted);
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+.seg-tab-dot.done { background: var(--green); }
+.seg-tab-dot.partial { background: var(--yellow); }
+
+/* Список реплик */
+.utterances-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 80px;
+  background: var(--bg);
+}
+
+.seg-header-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.seg-header-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.seg-header-file {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.seg-header-spacer { flex: 1; }
+
+/* Карточка реплики */
+.utterance-card {
+  display: grid;
+  grid-template-columns: 52px 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  background: var(--surface);
+}
+.utterance-card:hover {
+  border-color: var(--border);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+}
+.utterance-card:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.utterance-card.translated {
+  border-color: rgba(62,207,142,0.2);
+}
+
+/* Таймкод */
+.utt-time {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 4px;
+  border-right: 1px solid var(--border-soft);
+  background: var(--surface2);
+  min-height: 72px;
+}
+
+.utt-time-start {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+.utt-time-dash {
+  width: 1px;
+  height: 12px;
+  background: var(--border);
+  margin: 3px 0;
+}
+
+.utt-time-end {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* Тайский текст */
+.utt-thai {
+  padding: 12px 14px;
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.utt-thai-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--thai-dim);
+  font-weight: 600;
+}
+
+.utt-thai-text {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--thai);
+  word-break: break-word;
+}
+
+/* Русский перевод */
+.utt-ru {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.utt-ru-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ru-dim);
+  font-weight: 600;
+}
+
+.utt-ru-textarea {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--ru);
+  font-size: 13px;
+  line-height: 1.65;
+  resize: none;
+  min-height: 42px;
+  width: 100%;
+}
+.utt-ru-textarea::placeholder { color: var(--text-muted); font-style: italic; }
+.utt-ru-textarea:focus { color: var(--ru); }
+
+/* Статус сохранения */
+.utt-save-status {
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 2px;
+  min-height: 12px;
+  transition: color 0.3s;
+}
+.utt-save-status.saving { color: var(--yellow); }
+.utt-save-status.saved  { color: var(--green); }
+.utt-save-status.error  { color: var(--red); }
+
+/* Пустой экран */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--text-dim);
+  background: var(--bg);
+}
+
+.empty-icon {
+  font-size: 48px;
+  opacity: 0.3;
+}
+
+.empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty-sub {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* ─── Прогресс-бар перевода ─────────────────────────────────────────────── */
+.translation-progress {
+  padding: 10px 20px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.tp-label { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+
+.tp-track {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.tp-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--green);
+  transition: width 0.4s ease;
+}
+
+.tp-pct {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--green);
+  min-width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ─── Загрузка ──────────────────────────────────────────────────────────── */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 1000;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── Toast-уведомления ─────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+  z-index: 500;
+  transform: translateY(80px);
+  opacity: 0;
+  transition: all 0.25s ease;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.green { border-color: var(--green); color: var(--green); }
+.toast.red   { border-color: var(--red); color: var(--red); }
+
+/* ─── Адаптив ───────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  :root { --sidebar: 240px; }
+  .utterance-card { grid-template-columns: 48px 1fr; }
+  .utt-ru { border-top: 1px solid var(--border-soft); grid-column: 2; }
+}
+
+@media (max-width: 640px) {
+  .sidebar { display: none; }
+  .utterance-card { grid-template-columns: 48px 1fr; }
+  .utt-ru { grid-column: 2; }
+}
+</style>
+</head>
+<body>
+
+<!-- Шапка -->
+<header class="topbar">
+  <div class="logo">
+    <div class="logo-dot"></div>
+    GHOST
+  </div>
+  <span style="font-size:12px;color:var(--text-dim);">Транскрипты &amp; Перевод</span>
+  <div class="topbar-sep"></div>
+  <button class="topbar-btn" onclick="location.href='/'">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 8 8 12 12 16"/><line x1="16" y1="12" x2="8" y2="12"/></svg>
+    Запись
+  </button>
+  <button class="topbar-btn" onclick="refreshAll()">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+    Обновить
+  </button>
+</header>
+
+<!-- Макет -->
+<div class="layout">
+
+  <!-- Сайдбар -->
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <div class="sidebar-title">Сессии</div>
+      <div class="search-box">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Поиск по ID..." id="search-input" oninput="filterSessions(this.value)">
+      </div>
+    </div>
+    <div class="sessions-list" id="sessions-list">
+      <div class="sessions-empty">Загрузка...</div>
+    </div>
+  </aside>
+
+  <!-- Основная панель -->
+  <div class="main-panel" id="main-panel">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🎙</div>
+      <div class="empty-title">Выберите сессию</div>
+      <div class="empty-sub">Выберите сессию из списка слева для просмотра транскрипта</div>
+    </div>
+
+    <!-- Контент сессии (скрыт до выбора) -->
+    <div id="session-view" style="display:none;flex-direction:column;height:100%;overflow:hidden;flex:1;">
+
+      <!-- Шапка сессии -->
+      <div class="panel-head">
+        <div class="panel-head-info">
+          <div class="panel-session-id" id="view-session-id">—</div>
+          <div class="panel-session-meta" id="view-session-meta">—</div>
+        </div>
+        <button class="copy-thai-btn" id="copy-thai-btn" onclick="copyAllThai()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Тайский
+        </button>
+        <button class="copy-all-btn" id="copy-all-btn" onclick="copyAll()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Копировать всё
+        </button>
+      </div>
+
+      <!-- Вкладки сегментов -->
+      <div class="segments-tabs" id="segments-tabs"></div>
+
+      <!-- Реплики -->
+      <div class="utterances-scroll" id="utterances-scroll"></div>
+
+      <!-- Прогресс перевода -->
+      <div class="translation-progress">
+        <span class="tp-label">Перевод:</span>
+        <div class="tp-track"><div class="tp-fill" id="tp-fill" style="width:0%"></div></div>
+        <span class="tp-pct" id="tp-pct">0%</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Загрузка -->
+<div class="loading-overlay" id="loading-overlay">
+  <div class="spinner"></div>
+  Загрузка данных...
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Состояние приложения
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+let allSessions = [];      // Список сессий (краткое резюме)
+let currentSession = null; // Полная сессия (с сегментами и репликами)
+let currentSegIdx = 0;     // Активный сегмент
+let debounceTimers = {};   // Таймеры debounce для каждой реплики
+const DEBOUNCE_MS = 700;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Утилиты
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtTime(sec) {
+  const s = Math.floor(sec);
+  const m = Math.floor(s / 60);
+  const ss = String(s % 60).padStart(2, '0');
+  return `${m}:${ss}`;
+}
+
+function fmtDate(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleString('ru', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (type ? ' ' + type : '');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Загрузка данных
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+async function refreshAll() {
+  try {
+    const r = await fetch('/api/sessions');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    allSessions = await r.json();
+    renderSessionsList(allSessions);
+
+    // Если текущая сессия открыта — перезагрузим её
+    if (currentSession) {
+      const found = allSessions.find(s => s.id === currentSession.id);
+      if (found) await loadSession(currentSession.id);
+    }
+  } catch (e) {
+    toast('Ошибка загрузки: ' + e.message, 'red');
+  } finally {
+    document.getElementById('loading-overlay').style.display = 'none';
+  }
+}
+
+async function loadSession(id) {
+  try {
+    const r = await fetch('/api/sessions/' + id);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    currentSession = await r.json();
+    currentSegIdx = 0;
+    renderSession();
+  } catch (e) {
+    toast('Ошибка загрузки сессии: ' + e.message, 'red');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Рендеринг сайдбара
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function renderSessionsList(sessions) {
+  const list = document.getElementById('sessions-list');
+  if (!sessions.length) {
+    list.innerHTML = '<div class="sessions-empty">Нет записей.<br>Сначала запишите аудио.</div>';
+    return;
+  }
+
+  list.innerHTML = sessions.map(s => {
+    const pct = s.utterance_count > 0
+      ? Math.round(s.translated_count / s.utterance_count * 100)
+      : 0;
+    const badgeClass = pct === 100 ? 'done' : pct > 0 ? 'partial' : '';
+    const badgeText  = pct === 100 ? '✓ переведено' : pct > 0 ? `${pct}% переведено` : `${s.utterance_count} реплик`;
+    const active = currentSession && currentSession.id === s.id ? ' active' : '';
+
+    return `<div class="session-item${active}" onclick="selectSession(${s.id})">
+      <div class="session-item-id">${esc(s.slug)}</div>
+      <div class="session-item-meta">
+        <span class="meta-badge">${s.segment_count} сегм.</span>
+        <span class="meta-badge ${badgeClass}">${badgeText}</span>
+      </div>
+      <div class="session-item-progress">
+        <div class="session-item-progress-fill" style="width:${pct}%"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterSessions(q) {
+  const filtered = allSessions.filter(s =>
+    s.slug.toLowerCase().includes(q.toLowerCase())
+  );
+  renderSessionsList(filtered);
+}
+
+function selectSession(id) {
+  // Активная метка обновится после loadSession → renderSession
+  loadSession(id);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Рендеринг основной панели
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function renderSession() {
+  if (!currentSession) return;
+
+  const s = currentSession;
+
+  // Скрываем заглушку, показываем вьюер
+  document.getElementById('empty-state').style.display = 'none';
+  const view = document.getElementById('session-view');
+  view.style.display = 'flex';
+
+  // Шапка
+  document.getElementById('view-session-id').textContent = s.slug;
+  const totalU = s.segments.reduce((acc, seg) => acc + seg.utterances.length, 0);
+  const doneU  = s.segments.reduce((acc, seg) =>
+    acc + seg.utterances.filter(u => u.text_ru).length, 0);
+  document.getElementById('view-session-meta').textContent =
+    `${s.segments.length} сегм. · ${totalU} реплик · создана ${fmtDate(s.created_at)}`;
+
+  // Прогресс перевода
+  updateProgress(doneU, totalU);
+
+  // Вкладки сегментов
+  renderSegmentTabs();
+
+  // Контент текущего сегмента
+  renderUtterances();
+
+  // Обновляем сайдбар (активное состояние)
+  renderSessionsList(allSessions);
+}
+
+function updateProgress(done, total) {
+  const pct = total > 0 ? Math.round(done / total * 100) : 0;
+  document.getElementById('tp-fill').style.width = pct + '%';
+  document.getElementById('tp-pct').textContent = pct + '%';
+}
+
+function renderSegmentTabs() {
+  const s = currentSession;
+  const tabs = document.getElementById('segments-tabs');
+  tabs.innerHTML = s.segments.map((seg, i) => {
+    const total = seg.utterances.length;
+    const done  = seg.utterances.filter(u => u.text_ru).length;
+    const dotClass = done === total && total > 0 ? 'done' : done > 0 ? 'partial' : '';
+    const active = i === currentSegIdx ? ' active' : '';
+    return `<button class="seg-tab${active}" onclick="switchSegment(${i})">
+      <span class="seg-tab-dot ${dotClass}"></span>
+      SEG ${String(seg.index).padStart(4,'0')}
+    </button>`;
+  }).join('');
+}
+
+function switchSegment(idx) {
+  currentSegIdx = idx;
+  renderSegmentTabs();
+  renderUtterances();
+  document.getElementById('utterances-scroll').scrollTop = 0;
+}
+
+function renderUtterances() {
+  const seg = currentSession.segments[currentSegIdx];
+  if (!seg) return;
+
+  const scroll = document.getElementById('utterances-scroll');
+  const utts = seg.utterances;
+
+  if (!utts.length) {
+    scroll.innerHTML = `<div style="text-align:center;padding:60px 0;color:var(--text-dim);font-size:13px;">
+      Нет реплик в этом сегменте
+    </div>`;
+    return;
+  }
+
+  const segFilename = esc(seg.filename || '');
+
+  scroll.innerHTML = `
+    <div class="seg-header-inline">
+      <span class="seg-header-label">SEG ${String(seg.index).padStart(4,'0')}</span>
+      <span class="seg-header-file">${segFilename}</span>
+      <span class="seg-header-spacer"></span>
+      <span style="font-size:11px;color:var(--text-dim)">${utts.length} реплик · ${utts.filter(u=>u.text_ru).length} переведено</span>
+    </div>
+    ${utts.map(u => renderUtteranceCard(u)).join('')}
+  `;
+
+  // Навешиваем обработчики на textarea (после вставки в DOM)
+  utts.forEach(u => {
+    const ta = document.getElementById('ta-' + u.id);
+    if (ta) {
+      ta.addEventListener('input', () => onTranslationInput(u.id, ta));
+      // Авто-высота
+      autoResize(ta);
+      ta.addEventListener('input', () => autoResize(ta));
+    }
+  });
+}
+
+function renderUtteranceCard(u) {
+  const translated = !!u.text_ru;
+  return `<div class="utterance-card ${translated ? 'translated' : ''}" id="card-${u.id}">
+    <div class="utt-time">
+      <span class="utt-time-start">${fmtTime(u.start_sec)}</span>
+      <div class="utt-time-dash"></div>
+      <span class="utt-time-end">${fmtTime(u.end_sec)}</span>
+    </div>
+    <div class="utt-thai">
+      <span class="utt-thai-label">ไทย</span>
+      <div class="utt-thai-text">${esc(u.text_thai)}</div>
+    </div>
+    <div class="utt-ru">
+      <span class="utt-ru-label">РУС</span>
+      <textarea
+        id="ta-${u.id}"
+        class="utt-ru-textarea"
+        placeholder="Введите перевод..."
+        rows="2"
+      >${u.text_ru ? esc(u.text_ru) : ''}</textarea>
+      <div class="utt-save-status" id="status-${u.id}"></div>
+    </div>
+  </div>`;
+}
+
+function autoResize(ta) {
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Сохранение переводов
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function onTranslationInput(uttId, ta) {
+  const statusEl = document.getElementById('status-' + uttId);
+  statusEl.textContent = 'изменено...';
+  statusEl.className = 'utt-save-status';
+
+  clearTimeout(debounceTimers[uttId]);
+  debounceTimers[uttId] = setTimeout(() => saveTranslation(uttId, ta.value, statusEl), DEBOUNCE_MS);
+}
+
+async function saveTranslation(uttId, value, statusEl) {
+  statusEl.textContent = 'сохранение...';
+  statusEl.className = 'utt-save-status saving';
+
+  try {
+    const r = await fetch('/api/utterances/' + uttId + '/translation', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text_ru: value.trim() || null }),
+    });
+
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+
+    statusEl.textContent = 'сохранено';
+    statusEl.className = 'utt-save-status saved';
+    setTimeout(() => { statusEl.textContent = ''; statusEl.className = 'utt-save-status'; }, 2000);
+
+    // Обновляем in-memory данные и прогресс
+    updateLocalTranslation(uttId, value.trim() || null);
+    const card = document.getElementById('card-' + uttId);
+    if (card) card.classList.toggle('translated', !!value.trim());
+
+    recalcProgress();
+
+  } catch (e) {
+    statusEl.textContent = 'ошибка!';
+    statusEl.className = 'utt-save-status error';
+    toast('Ошибка сохранения: ' + e.message, 'red');
+  }
+}
+
+function updateLocalTranslation(uttId, value) {
+  if (!currentSession) return;
+  for (const seg of currentSession.segments) {
+    const u = seg.utterances.find(u => u.id === uttId);
+    if (u) { u.text_ru = value; break; }
+  }
+}
+
+function recalcProgress() {
+  if (!currentSession) return;
+  let total = 0, done = 0;
+  for (const seg of currentSession.segments) {
+    total += seg.utterances.length;
+    done  += seg.utterances.filter(u => u.text_ru).length;
+  }
+  updateProgress(done, total);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Копирование текста
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+async function copyAll() {
+  if (!currentSession) return;
+  const lines = [];
+  for (const seg of currentSession.segments) {
+    for (const u of seg.utterances) {
+      const thai = u.text_thai || '';
+      const ru   = u.text_ru   || '';
+      lines.push(`[${fmtTime(u.start_sec)}] ${thai}`);
+      if (ru) lines.push(`         → ${ru}`);
+    }
+  }
+  await doCopy(lines.join('\n'), 'copy-all-btn', 'Скопировано!');
+}
+
+async function copyAllThai() {
+  if (!currentSession) return;
+  const lines = [];
+  for (const seg of currentSession.segments) {
+    for (const u of seg.utterances) {
+      lines.push(`[${fmtTime(u.start_sec)}] ${u.text_thai}`);
+    }
+  }
+  await doCopy(lines.join('\n'), 'copy-thai-btn', 'Тайский скопирован');
+}
+
+async function doCopy(text, btnId, successMsg) {
+  const btn = document.getElementById(btnId);
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    btn.classList.add('copied');
+    toast(successMsg, 'green');
+    setTimeout(() => btn.classList.remove('copied'), 2000);
+  } catch (e) {
+    toast('Не удалось скопировать: ' + e.message, 'red');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Инициализация
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+refreshAll();
+// Авто-обновление каждые 20 секунд
+setInterval(() => {
+  if (!currentSession) refreshAll();
+}, 20000);
+</script>
+</body>
+</html>

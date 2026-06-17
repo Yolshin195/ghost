@@ -21,9 +21,18 @@ use tokio::{
     time::timeout,
 };
 use tracing::{error, info};
+use ghost::{app_state::build_shared_state, handler::{
+    list_sessions, get_session, delete_session,
+    get_segment, update_utterance_translation, assign_speaker_to_utterance,
+    health,
+}};
+use axum::routing::{delete, patch};
 
 const CHUNK_DURATION_SECS: u64 = 120;
 const OUTPUT_DIR: &str = "recordings";
+
+const DB_URL: &str = "sqlite://transcripts.db";
+const TEMPLATES_DIR: &str = "templates";
 
 const HTML: &str = r#"<!DOCTYPE html>
 <html lang="ru">
@@ -1388,6 +1397,19 @@ async fn handle_pcm_socket(socket: WebSocket, sample_rate: u32, channels: u16) {
     info!("PCM сессия {session_id} завершена");
 }
 
+// ─── раздача статики ─────────────────────────────────────────────────────────
+
+async fn sessions_page() -> impl IntoResponse {
+    let path = format!("{TEMPLATES_DIR}/sessions.html");
+    match tokio::fs::read_to_string(&path).await {
+        Ok(html) => Html(html).into_response(),
+        Err(e) => {
+            error!("Не удалось прочитать шаблон {path}: {e}");
+            axum::http::StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
@@ -1401,12 +1423,31 @@ async fn main() {
         .with_max_level(tracing::Level::INFO)
         .init();
 
+    // Инициализация БД (логика в src/app_state.rs)
+    let shared_state = build_shared_state(DB_URL)
+        .await
+        .expect("Не удалось подключиться к БД");
+
     let app = Router::new()
+        // Страницы
         .route("/", get(index))
+        .route("/sessions", get(sessions_page))
+        .route("/transcripts", get(transcripts_page))      // старая страница
+        // WebSocket
         .route("/ws/audio", get(ws_handler))
         .route("/ws/audio-pcm", get(ws_pcm_handler))
-        .route("/transcripts", get(transcripts_page))
-        .route("/api/transcripts", get(api_transcripts));
+        // API транскриптов (старый)
+        .route("/api/transcripts", get(api_transcripts))
+        // API сессий (новый, через БД)
+        .route("/api/sessions", get(list_sessions))
+        .route("/api/sessions/{id}", get(get_session))
+        .route("/api/sessions/{id}", delete(delete_session))
+        .route("/api/segments/{id}", get(get_segment))
+        .route("/api/utterances/{id}/translation", patch(update_utterance_translation))
+        .route("/api/utterances/{id}/speaker", axum::routing::post(assign_speaker_to_utterance))
+        .route("/health", get(health))
+        // Подключаем SharedState
+        .with_state(shared_state);
 
     // Сертификат и ключ генерируются build.rs автоматически при сборке
     let tls = RustlsConfig::from_pem_file("cert.pem", "key.pem")
