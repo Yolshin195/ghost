@@ -9,3 +9,5 @@ key.pem
 transcripts.db
 transcripts.db-shm
 transcripts.db-wal
+
+llm_context.txt
