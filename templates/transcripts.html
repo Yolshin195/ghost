@@ -2,91 +2,240 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<title>Аудио Транскрипты</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Транскрипты</title>
 <style>
   :root {
-    --bg: #0d0f14; --surface: #151820; --border: #1e2330;
-    --accent: #4f8ef7; --text: #c8d0e0; --text-dim: #5a6480;
-    --green: #3ecf8e; --mono: 'JetBrains Mono', monospace;
+    --bg:       #0d0f14;
+    --surface:  #151820;
+    --border:   #1e2330;
+    --accent:   #4f8ef7;
+    --text:     #c8d0e0;
+    --text-dim: #5a6480;
+    --green:    #3ecf8e;
+    --yellow:   #f7c44f;
+    --mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
   }
-  body { background: var(--bg); color: var(--text); font-family: var(--mono); margin: 0; padding-bottom: 50px; }
-  
-  /* Плеер прилипает к верху */
-  .player-sticky { position: sticky; top: 0; background: var(--surface); padding: 20px; border-bottom: 1px solid var(--border); z-index: 100; text-align: center; }
-  #mainPlayer { width: 100%; max-width: 800px; }
-
-  .container { max-width: 1000px; margin: 20px auto; padding: 0 20px; }
-
-  /* Сетка транскрипции */
-  .segment-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 0; border-bottom: 1px solid var(--border); }
-  .seg-meta { font-size: 10px; color: var(--text-dim); margin-bottom: 5px; }
-  
-  .orig-text { cursor: pointer; line-height: 1.6; font-size: 14px; }
-  .orig-text:hover { color: var(--accent); }
-  
-  textarea { 
-    width: 100%; height: 80px; background: var(--surface); border: 1px solid var(--border); 
-    color: var(--green); padding: 10px; border-radius: 4px; font-family: var(--mono);
-    resize: vertical;
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--mono); min-height: 100vh;
+    padding: 24px 16px 64px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
   }
+
+  /* ── шапка ── */
+  .topbar {
+    width: 100%; max-width: 720px;
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 12px; border-bottom: 1px solid var(--border);
+    margin-bottom: 4px;
+  }
+  .topbar-title { font-size: 18px; font-weight: 700; }
+  .topbar-sub   { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .nav-link {
+    font-size: 12px; color: var(--accent); text-decoration: none;
+    padding: 6px 14px; border: 1px solid var(--accent);
+    border-radius: 6px; transition: background .15s;
+  }
+  .nav-link:hover { background: #1e3260; }
+
+  /* ── сессия ── */
+  .session {
+    width: 100%; max-width: 720px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden;
+  }
+  .session-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+    transition: background .15s;
+  }
+  .session-header:hover { background: #1a1e28; }
+  .session-id   { font-size: 13px; font-weight: 600; }
+  .session-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .session-actions { display: flex; gap: 8px; align-items: center; }
+  .chevron { font-size: 12px; color: var(--text-dim); transition: transform .2s; }
+  .chevron.open { transform: rotate(180deg); }
+
+  /* ── кнопка копирования ── */
+  .copy-btn {
+    padding: 5px 12px; border-radius: 5px;
+    border: 1px solid var(--border); background: var(--bg);
+    color: var(--text-dim); font-family: var(--mono); font-size: 11px;
+    cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .copy-btn:hover  { border-color: var(--accent); color: var(--accent); }
+  .copy-btn.copied { border-color: var(--green);  color: var(--green); }
+
+  /* ── тело сессии ── */
+  .session-body { display: none; flex-direction: column; }
+  .session-body.open { display: flex; }
+
+  /* ── сегмент ── */
+  .segment {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .segment:last-child { border-bottom: none; }
+  .seg-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px;
+  }
+  .seg-label { font-size: 11px; color: var(--text-dim); letter-spacing: .1em; }
+  .seg-status-ok      { font-size: 11px; color: var(--green); }
+  .seg-status-pending { font-size: 11px; color: var(--yellow); }
+
+  .seg-text {
+    font-size: 13px; line-height: 1.7;
+    white-space: pre-wrap; word-break: break-word;
+    color: var(--text);
+  }
+  .seg-text.empty { color: var(--text-dim); font-style: italic; }
+
+  /* ── пустое состояние ── */
+  .empty {
+    color: var(--text-dim); font-size: 13px; text-align: center;
+    padding: 48px 0;
+  }
+
+  /* ── обновление ── */
+  .refresh-bar {
+    width: 100%; max-width: 720px;
+    display: flex; justify-content: flex-end; gap: 10px; align-items: center;
+  }
+  .refresh-hint { font-size: 11px; color: var(--text-dim); }
+  .refresh-btn {
+    padding: 5px 14px; border-radius: 5px;
+    border: 1px solid var(--border); background: var(--bg);
+    color: var(--text-dim); font-family: var(--mono); font-size: 11px;
+    cursor: pointer; transition: all .15s;
+  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
 </style>
 </head>
 <body>
 
-<div class="player-sticky">
-    <audio controls id="mainPlayer"></audio>
-    <div id="file-info" style="font-size: 12px; margin-top: 10px; color: var(--text-dim);">Выберите сессию для начала</div>
+<div class="topbar">
+  <div>
+    <div class="topbar-title">Транскрипты</div>
+    <div class="topbar-sub">Тайский текст по сессиям</div>
+  </div>
+  <a href="/" class="nav-link">⬅ Запись</a>
 </div>
 
-<div class="container" id="root">
-    </div>
+<div class="refresh-bar">
+  <span class="refresh-hint" id="last-update"></span>
+  <button class="refresh-btn" onclick="load()">↻ Обновить</button>
+</div>
+
+<div id="root" style="width:100%;max-width:720px;display:flex;flex-direction:column;gap:12px">
+  <div class="empty">Загрузка...</div>
+</div>
 
 <script>
-const player = document.getElementById('mainPlayer');
+async function load() {
+  const root = document.getElementById('root');
+  try {
+    const r = await fetch('/api/transcripts');
+    const sessions = await r.json();
 
-// Функция смены аудио и рендера транскрипции
-function loadSession(session) {
-    const root = document.getElementById('root');
-    root.innerHTML = '';
-    
-    // В прототипе берем первый доступный файл как основной для плеера
-    if (session.segments.length > 0) {
-        player.src = session.segments[0].filename;
+    document.getElementById('last-update').textContent =
+      'Обновлено: ' + new Date().toLocaleTimeString('ru');
+
+    if (!sessions.length) {
+      root.innerHTML = '<div class="empty">Нет записей. Сначала запишите аудио.</div>';
+      return;
     }
 
-    session.segments.forEach(seg => {
-        const row = document.createElement('div');
-        row.className = 'segment-row';
-        row.innerHTML = `
-            <div>
-                <div class="seg-meta">${seg.filename}</div>
-                <div class="orig-text" onclick="seek(${seg.index})">${seg.text || '...'}</div>
+    root.innerHTML = '';
+    sessions.forEach((sess, si) => {
+      const totalSegs  = sess.segments.length;
+      const doneSegs   = sess.segments.filter(s => s.text).length;
+      const hasAnyText = !!sess.total_text.trim();
+
+      const el = document.createElement('div');
+      el.className = 'session';
+      el.innerHTML = `
+        <div class="session-header" onclick="toggleSession(${si})">
+          <div>
+            <div class="session-id">${sess.id}</div>
+            <div class="session-meta">${totalSegs} сегм. · ${doneSegs} транскрибировано</div>
+          </div>
+          <div class="session-actions">
+            ${hasAnyText ? `<button class="copy-btn" onclick="copyText(event, ${JSON.stringify(sess.total_text)})">
+              Копировать всё
+            </button>` : ''}
+            <span class="chevron ${si === 0 ? 'open' : ''}" id="chev-${si}">▼</span>
+          </div>
+        </div>
+        <div class="session-body ${si === 0 ? 'open' : ''}" id="body-${si}">
+          ${sess.segments.map(seg => `
+            <div class="segment">
+              <div class="seg-header">
+                <span class="seg-label">SEG ${String(seg.index).padStart(4,'0')} · ${seg.filename}</span>
+                <div style="display:flex;gap:8px;align-items:center">
+                  ${seg.text
+                    ? `<span class="seg-status-ok">✓ готово</span>
+                       <button class="copy-btn" onclick="copyText(event, ${JSON.stringify(seg.text)})">Копировать</button>`
+                    : `<span class="seg-status-pending">⏳ обрабатывается</span>`
+                  }
+                </div>
+              </div>
+              ${seg.text
+                ? `<div class="seg-text">${escHtml(seg.text)}</div>`
+                : `<div class="seg-text empty">Транскрипт ещё не готов</div>`
+              }
             </div>
-            <div>
-                <div class="seg-meta">Перевод (сохраняется автоматически)</div>
-                <textarea placeholder="Введите перевод..." onblur="saveTranslation('${seg.filename}', this.value)"></textarea>
-            </div>
-        `;
-        root.appendChild(row);
+          `).join('')}
+        </div>
+      `;
+      root.appendChild(el);
     });
+  } catch(e) {
+    root.innerHTML = `<div class="empty">Ошибка загрузки: ${e.message}</div>`;
+  }
 }
 
-function seek(index) {
-    // Здесь нужна логика сопоставления индекса сегмента с таймкодом
-    player.play();
+function toggleSession(si) {
+  const body = document.getElementById('body-' + si);
+  const chev = document.getElementById('chev-' + si);
+  const open = body.classList.toggle('open');
+  chev.classList.toggle('open', open);
 }
 
-function saveTranslation(filename, text) {
-    console.log("Сохраняем перевод для", filename, ":", text);
-    // TODO: fetch('/api/save-translation', { method: 'POST', ... })
+async function copyText(e, text) {
+  e.stopPropagation();
+  const btn = e.currentTarget;
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.classList.add('copied');
+    btn.textContent = '✓ Скопировано';
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.textContent = btn.dataset.label || (text.includes('\n') ? 'Копировать всё' : 'Копировать');
+    }, 2000);
+  } catch(_) {
+    // Fallback для Safari
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    btn.classList.add('copied');
+    btn.textContent = '✓ Скопировано';
+    setTimeout(() => { btn.classList.remove('copied'); btn.textContent = 'Копировать'; }, 2000);
+  }
 }
 
-// Загрузка списка сессий
-fetch('/api/transcripts')
-    .then(r => r.json())
-    .then(data => {
-        if(data.length > 0) loadSession(data[0]);
-    });
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Автообновление каждые 15 секунд
+load();
+setInterval(load, 15000);
 </script>
 </body>
 </html>
