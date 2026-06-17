@@ -2,46 +2,72 @@
 name    = "ghost"
 version = "0.1.0"
 edition = "2021"
+
+# ── Библиотека (переиспользуется везде) ────────────────────────────────────
+[lib]
+name = "ghost"
+path = "src/lib.rs"
+
 # ── Бинарники ─────────────────────────────────────────────────────────────────
+
 [[bin]]
 name = "ghost"
 path = "src/main.rs"
+required-features = []
+
 [[bin]]
 name = "recorder"
 path = "src/bin/recorder.rs"
-# ── Зависимости ───────────────────────────────────────────────────────────────
+required-features = []
+
+[[bin]]
+name = "ingest"
+path = "src/bin/ingest.rs"
+required-features = []
+
+# ── Зависимости (общие для всех бинарников) ───────────────────────────────────
+
 [dependencies]
 # Async runtime
-tokio        = { version = "1", features = ["full"] }
-futures-util = "0.3"
-# Сериализация (сервер)
-serde = { version = "1", features = ["derive"] }
-# Логи (сервер)
-tracing            = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt"] }
-# HTTP / WebSocket (сервер)
-axum        = { version = "0.7", features = ["ws"] }
-axum-server = { version = "0.7", features = ["tls-rustls"] }
-# WebSocket-клиент (консольный клиент)
-# native-tls нужен для --insecure (self-signed cert без dangerous_configuration)
-# rustls-tls-native-roots нужен для обычного TLS
-tokio-tungstenite = { version = "0.21", features = [
-    "rustls-tls-native-roots",
-] }
-# TLS (консольный клиент, secure режим)
-rustls              = "0.22"
-rustls-native-certs = "0.7"
-# TLS (консольный клиент, --insecure режим)
-native-tls = "0.2"
-# Аудио захват (консольный клиент)
-cpal = "0.15"
-# CLI парсер (консольный клиент)
-clap = { version = "4", features = ["derive"] }
-# Удобные ошибки (консольный клиент)
-anyhow = "1"
-# ── Build-зависимости ─────────────────────────────────────────────────────────
+tokio = { version = "1.52.3", features = ["full"] }
+futures-util = "0.3.32"
+
+# Сериализация
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0"  # ← добавить для API
+
+# Логи
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["fmt"] }
+
+# HTTP / WebSocket (для main.rs)
+axum = { version = "0.8.9", features = ["ws"] }
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+
+# БД (для service.rs)
+sqlx = { version = "0.9", features = ["runtime-tokio", "sqlite", "macros", "tls-rustls"] }
+
+# WebSocket-клиент (для recorder.rs и ingest.rs)
+tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-native-roots"] }
+
+# TLS (для recorder.rs)
+rustls = "0.23.40"
+rustls-native-certs = "0.8.4"
+native-tls = "0.2.18"
+pki-types = { package = "rustls-pki-types", version = "1" }
+
+# Аудио (для recorder.rs)
+cpal = "0.18.1"
+
+# CLI (для recorder.rs и ingest.rs)
+clap = { version = "4.6.1", features = ["derive"] }
+
+# Ошибки (везде)
+anyhow = "1.0.102"
+
+# Парсинг (для parse.rs)
+regex = "1.10"
+
 [build-dependencies]
-rcgen = "0.13"
-time  = { version = "0.3", features = ["std"] }
-# ── Linux: ALSA для CPAL ─────────────────────────────────────────────────────
-# sudo apt install libasound2-dev pkg-config
+rcgen = "0.14.8"
+time = { version = "0.3.49", features = ["std"] }

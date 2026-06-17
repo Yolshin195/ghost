@@ -8,7 +8,6 @@
 /// Управление во время записи:
 ///   Enter         — старт / стоп
 ///   q + Enter     — выход
-
 use std::{
     io::{self, BufRead, Write},
     sync::{
@@ -24,15 +23,11 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     StreamConfig,
 };
-use tokio::sync::mpsc;
-use tokio_tungstenite::{
-    connect_async_tls_with_config,
-    tungstenite::protocol::Message,
-    Connector,
-};
 use futures_util::{SinkExt, StreamExt};
 use rustls::{ClientConfig, RootCertStore};
 use std::sync::Arc as StdArc;
+use tokio::sync::mpsc;
+use tokio_tungstenite::{connect_async_tls_with_config, tungstenite::protocol::Message, Connector};
 
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
@@ -42,8 +37,8 @@ use rustls::{DigitallySignedStruct, Error as RustlsError, SignatureScheme};
 
 #[derive(Parser, Debug)]
 #[command(
-    name    = "recorder",
-    about   = "Консольный клиент записи аудио → WebSocket сервер",
+    name = "recorder",
+    about = "Консольный клиент записи аудио → WebSocket сервер",
     version
 )]
 struct Cli {
@@ -94,7 +89,11 @@ fn list_input_devices() -> Result<()> {
 
     for (i, dev) in host.input_devices()?.enumerate() {
         let name = dev.name().unwrap_or_else(|_| "<?>".into());
-        let mark = if name == default_name { " ◀ по умолчанию" } else { "" };
+        let mark = if name == default_name {
+            " ◀ по умолчанию"
+        } else {
+            ""
+        };
         println!("{:<4} {}{}", i, name, mark);
     }
     println!();
@@ -118,22 +117,22 @@ fn pick_device(idx: Option<usize>) -> Result<cpal::Device> {
 /// Сервер получает полноценный .wav файл, который ffmpeg/whisper может открыть.
 #[allow(dead_code)]
 fn wav_header(sample_rate: u32, channels: u16, num_samples: u32) -> Vec<u8> {
-    let byte_rate   = sample_rate * channels as u32 * 4; // f32 = 4 bytes
-    let data_size   = num_samples * channels as u32 * 4;
-    let chunk_size  = 36 + data_size;
+    let byte_rate = sample_rate * channels as u32 * 4; // f32 = 4 bytes
+    let data_size = num_samples * channels as u32 * 4;
+    let chunk_size = 36 + data_size;
 
     let mut h = Vec::with_capacity(44);
     h.extend_from_slice(b"RIFF");
     h.extend_from_slice(&chunk_size.to_le_bytes());
     h.extend_from_slice(b"WAVE");
     h.extend_from_slice(b"fmt ");
-    h.extend_from_slice(&16u32.to_le_bytes());          // subchunk size
-    h.extend_from_slice(&3u16.to_le_bytes());           // PCM float = 3
+    h.extend_from_slice(&16u32.to_le_bytes()); // subchunk size
+    h.extend_from_slice(&3u16.to_le_bytes()); // PCM float = 3
     h.extend_from_slice(&channels.to_le_bytes());
     h.extend_from_slice(&sample_rate.to_le_bytes());
     h.extend_from_slice(&byte_rate.to_le_bytes());
     h.extend_from_slice(&(channels * 4).to_le_bytes()); // block align
-    h.extend_from_slice(&32u16.to_le_bytes());          // bits per sample
+    h.extend_from_slice(&32u16.to_le_bytes()); // bits per sample
     h.extend_from_slice(b"data");
     h.extend_from_slice(&data_size.to_le_bytes());
     h
@@ -215,7 +214,11 @@ fn make_tls_connector(insecure: bool) -> Result<Connector> {
 // ─── VU-метр в терминале ─────────────────────────────────────────────────────
 
 fn draw_vu(rms: f32) {
-    let db = if rms > 0.0 { 20.0 * rms.log10() } else { -f32::INFINITY };
+    let db = if rms > 0.0 {
+        20.0 * rms.log10()
+    } else {
+        -f32::INFINITY
+    };
     let pct = ((db + 60.0) / 60.0).clamp(0.0, 1.0);
     let width = 30usize;
     let filled = (pct * width as f32) as usize;
@@ -253,7 +256,7 @@ async fn run_session(
 
     // Флаг активной записи (используется внутри CPAL-колбэка)
     let recording = Arc::new(AtomicBool::new(true));
-    let rec_flag  = recording.clone();
+    let rec_flag = recording.clone();
 
     let gate_linear: f32 = if gate_db <= -80.0 {
         0.0
@@ -265,7 +268,9 @@ async fn run_session(
     let stream = device.build_input_stream(
         &config,
         move |data: &[f32], _| {
-            if !rec_flag.load(Ordering::Relaxed) { return; }
+            if !rec_flag.load(Ordering::Relaxed) {
+                return;
+            }
 
             // RMS для гейта
             let rms: f32 = {
@@ -289,22 +294,21 @@ async fn run_session(
     // ── WebSocket ──
     // ── WebSocket ──
     // Автоматически используем insecure для локальных адресов
-    let use_insecure = insecure || server_url.contains("127.0.0.1") || server_url.contains("localhost");
+    let use_insecure =
+        insecure || server_url.contains("127.0.0.1") || server_url.contains("localhost");
     let tls = make_tls_connector(use_insecure)?;
-    let url = format!("{}/ws/audio-pcm?sr={}&ch={}", server_url, sample_rate, channels);
+    let url = format!(
+        "{}/ws/audio-pcm?sr={}&ch={}",
+        server_url, sample_rate, channels
+    );
 
     println!("  Подключение к {} ...", url);
     if use_insecure && !insecure {
         println!("  ⚠️  Локальный адрес — используем insecure TLS режим");
     }
-    let (ws_stream, _) = connect_async_tls_with_config(
-        &url,
-        None,
-        false,
-        Some(tls),
-    )
-    .await
-    .context("Не удалось подключиться к серверу")?;
+    let (ws_stream, _) = connect_async_tls_with_config(&url, None, false, Some(tls))
+        .await
+        .context("Не удалось подключиться к серверу")?;
 
     let (mut ws_tx, mut ws_rx) = ws_stream.split();
     println!("  Соединение установлено. Идёт запись...\n");
@@ -317,11 +321,13 @@ async fn run_session(
                 if txt.contains("file_saved") {
                     // {"type":"file_saved","filename":"...","size_kb":123}
                     let fname = txt
-                        .split("\"filename\":\"").nth(1)
+                        .split("\"filename\":\"")
+                        .nth(1)
                         .and_then(|s| s.split('"').next())
                         .unwrap_or("?");
                     let size = txt
-                        .split("\"size_kb\":").nth(1)
+                        .split("\"size_kb\":")
+                        .nth(1)
                         .and_then(|s| s.split(['}', ',']).next())
                         .unwrap_or("?");
                     println!("\n  ✓ Сохранён сегмент: {} ({} KB)", fname, size);
@@ -355,10 +361,7 @@ async fn run_session(
 
                 if accumulator.len() >= samples_per_flush {
                     // Конвертируем f32 сэмплы в байты (little-endian)
-                    let bytes: Vec<u8> = accumulator
-                        .iter()
-                        .flat_map(|s| s.to_le_bytes())
-                        .collect();
+                    let bytes: Vec<u8> = accumulator.iter().flat_map(|s| s.to_le_bytes()).collect();
                     accumulator.clear();
 
                     if ws_tx.send(Message::Binary(bytes)).await.is_err() {
@@ -378,10 +381,7 @@ async fn run_session(
 
     // Сбрасываем остаток буфера
     if !accumulator.is_empty() {
-        let bytes: Vec<u8> = accumulator
-            .iter()
-            .flat_map(|s| s.to_le_bytes())
-            .collect();
+        let bytes: Vec<u8> = accumulator.iter().flat_map(|s| s.to_le_bytes()).collect();
         ws_tx.send(Message::Binary(bytes)).await.ok();
     }
 
@@ -402,19 +402,29 @@ async fn main() -> Result<()> {
         return list_input_devices();
     }
 
-    println!(r#"
+    println!(
+        r#"
  ╔══════════════════════════════════════╗
  ║   Audio Recorder  →  WebSocket      ║
  ╚══════════════════════════════════════╝
-"#);
+"#
+    );
 
     let device = pick_device(cli.device)?;
     println!("  Устройство : {}", device.name().unwrap_or_default());
     println!("  Сервер     : {}", cli.server);
-    println!("  Частота    : {} Гц, {} кан.", cli.sample_rate, cli.channels);
-    println!("  Gain       : {:.1}×   Gate: {} дБ",
+    println!(
+        "  Частота    : {} Гц, {} кан.",
+        cli.sample_rate, cli.channels
+    );
+    println!(
+        "  Gain       : {:.1}×   Gate: {} дБ",
         cli.gain,
-        if cli.gate_db <= -80.0 { "отключён".to_string() } else { cli.gate_db.to_string() }
+        if cli.gate_db <= -80.0 {
+            "отключён".to_string()
+        } else {
+            cli.gate_db.to_string()
+        }
     );
     if cli.insecure {
         println!("  ⚠  TLS: принимаем любой сертификат (--insecure)");
@@ -429,8 +439,11 @@ async fn main() -> Result<()> {
         .default_input_config()
         .context("Не удалось получить конфигурацию устройства")?
         .config();
-    
-    println!("  ✓ Конфигурация: {} Гц, {} кан.", config.sample_rate.0, config.channels);
+
+    println!(
+        "  ✓ Конфигурация: {} Гц, {} кан.",
+        config.sample_rate.0, config.channels
+    );
 
     // ── главный цикл: Enter = старт/стоп ──
     let stdin = io::stdin();
@@ -470,19 +483,19 @@ async fn main() -> Result<()> {
                 .or_else(|| host.default_input_device())
                 .context("Устройство не найдено")?;
 
-            let cfg    = config.clone();
-            let sr     = config.sample_rate.0;
-            let ch     = config.channels;
-            let gain   = cli.gain;
-            let gate   = cli.gate_db;
+            let cfg = config.clone();
+            let sr = config.sample_rate.0;
+            let ch = config.channels;
+            let gain = cli.gain;
+            let gate = cli.gate_db;
             let server = cli.server.clone();
-            let ins    = cli.insecure;
+            let ins = cli.insecure;
 
             let thread = std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
                     match run_session(&dev, cfg, sr, ch, gain, gate, &server, ins, stop).await {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => eprintln!("\n  Ошибка записи: {e:#}"),
                     }
                 });

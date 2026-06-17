@@ -5,3 +5,7 @@
 cert.pem
 key.pem
 .DS_Store
+
+transcripts.db
+transcripts.db-shm
+transcripts.db-wal
