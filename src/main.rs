@@ -566,6 +566,17 @@ async fn transcripts_page() -> impl IntoResponse {
     }
 }
 
+async fn batch_translate_page() -> impl IntoResponse {
+    let path = format!("{TEMPLATES_DIR}/batch_translate.html");
+    match tokio::fs::read_to_string(&path).await {
+        Ok(html) => Html(html).into_response(),
+        Err(e) => {
+            error!("Шаблон {path}: {e}");
+            axum::http::StatusCode::NOT_FOUND.into_response()
+        }
+    }
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 #[tokio::main]
@@ -589,6 +600,7 @@ async fn main() {
         .route("/", get(recorder_page))
         .route("/sessions", get(sessions_page))
         .route("/transcripts", get(transcripts_page))      // старая страница
+        .route("/batch", get(batch_translate_page))
         // WebSocket
         .route("/ws/audio", get(ws_handler))
         .route("/ws/audio-pcm", get(ws_pcm_handler))

@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ghost — Пакетный перевод</title>
+<style>
+:root {
+  --bg:          #0c0e12;
+  --surface:     #13161d;
+  --surface2:    #181c25;
+  --surface3:    #1e2330;
+  --border:      #252b3a;
+  --border-soft: #1a1f2c;
+  --accent:      #5b8dee;
+  --accent-dim:  #1a2a50;
+  --accent-glow: rgba(91,141,238,0.15);
+  --thai:        #e8d5a3;
+  --thai-dim:    #9a8f75;
+  --ru:          #a8c8ff;
+  --green:       #3ecf8e;
+  --yellow:      #f0b429;
+  --red:         #e05555;
+  --red-dim:     #2a1212;
+  --text:        #c5cde0;
+  --text-dim:    #525d78;
+  --text-muted:  #363d52;
+  --mono: 'JetBrains Mono','Fira Code',ui-monospace,monospace;
+  --sans: 'Inter',system-ui,-apple-system,sans-serif;
+  --radius: 10px;
+  --radius-sm: 6px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--sans); display: flex; flex-direction: column; min-height: 100%; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; }
+textarea { font-family: inherit; }
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── Топбар ── */
+.topbar { display: flex; align-items: center; gap: 14px; padding: 0 18px; height: 50px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+.logo { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 13px; font-weight: 700; letter-spacing: .1em; color: var(--accent); }
+.logo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 7px var(--accent); }
+.sep { flex: 1; }
+.tb-btn { display: flex; align-items: center; gap: 5px; padding: 5px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500; color: var(--text-dim); border: 1px solid var(--border); background: var(--surface2); transition: all .15s; }
+.tb-btn:hover { color: var(--text); border-color: var(--accent); }
+
+/* ── Основной контент ── */
+.page { display: grid; grid-template-columns: 280px 1fr; flex: 1; overflow: hidden; height: calc(100vh - 50px); }
+
+/* ── Левая колонка — выбор сессии ── */
+.left-col { border-right: 1px solid var(--border); display: flex; flex-direction: column; background: var(--surface); overflow: hidden; }
+.col-head { padding: 12px 14px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+.col-title { font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
+.search-box { display: flex; align-items: center; gap: 7px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 9px; transition: border-color .15s; }
+.search-box:focus-within { border-color: var(--accent); }
+.search-box svg { color: var(--text-dim); flex-shrink: 0; }
+.search-box input { background: none; border: none; outline: none; color: var(--text); font-size: 12px; width: 100%; }
+.search-box input::placeholder { color: var(--text-dim); }
+.sessions-list { overflow-y: auto; flex: 1; padding: 5px 7px; }
+.si { padding: 9px 11px; border-radius: var(--radius-sm); cursor: pointer; transition: background .12s; border: 1px solid transparent; margin-bottom: 2px; }
+.si:hover { background: var(--surface2); }
+.si.active { background: var(--accent-dim); border-color: var(--accent); }
+.si-id { font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--text); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.si.active .si-id { color: var(--accent); }
+.si-meta { display: flex; gap: 6px; }
+.badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: var(--surface3); color: var(--text-dim); font-family: var(--mono); }
+.badge.done { background: rgba(62,207,142,.12); color: var(--green); }
+.badge.partial { background: rgba(240,180,41,.12); color: var(--yellow); }
+
+/* ── Правая колонка — инструменты ── */
+.right-col { display: flex; flex-direction: column; overflow: hidden; }
+
+/* Шапка правой колонки */
+.right-head { padding: 14px 20px 12px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; display: flex; align-items: center; gap: 14px; }
+.right-title { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--text); }
+.right-meta { font-size: 11px; color: var(--text-dim); }
+.rh-sep { flex: 1; }
+
+/* Кнопки */
+.btn { display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; transition: all .15s; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: #7aaaf5; }
+.btn-primary:disabled { opacity: .4; cursor: default; }
+.btn-success { background: rgba(62,207,142,.15); color: var(--green); border: 1px solid rgba(62,207,142,.3); }
+.btn-success:hover { background: rgba(62,207,142,.25); }
+.btn-success:disabled { opacity: .4; cursor: default; }
+.btn-ghost { border: 1px solid var(--border); color: var(--text-dim); background: var(--surface2); }
+.btn-ghost:hover { color: var(--text); border-color: var(--accent); }
+
+/* Основное тело */
+.right-body { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Карточки шагов */
+.step-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  overflow: hidden;
+}
+.step-header {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  border-bottom: 1px solid var(--border-soft); background: var(--surface2);
+}
+.step-num {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--accent-dim);
+  border: 1px solid var(--accent); display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--accent); flex-shrink: 0;
+}
+.step-title { font-size: 13px; font-weight: 600; color: var(--text); }
+.step-sub { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+.step-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+
+/* Управление чанком */
+.chunk-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.chunk-controls label { font-size: 12px; color: var(--text-dim); }
+.chunk-select {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text); font-size: 12px; font-family: var(--mono); padding: 5px 10px;
+  outline: none; transition: border-color .15s;
+}
+.chunk-select:focus { border-color: var(--accent); }
+.chunk-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.chunk-nav button { padding: 5px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-dim); background: var(--surface2); transition: all .15s; }
+.chunk-nav button:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+.chunk-nav button:disabled { opacity: .4; cursor: default; }
+.chunk-info { font-family: var(--mono); font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+
+/* Промпт */
+.prompt-box {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 10px 12px; font-size: 12px; color: var(--text-dim); line-height: 1.6;
+  font-family: var(--mono); white-space: pre-wrap;
+}
+
+/* JSON textarea */
+.json-area {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--thai); font-family: var(--mono); font-size: 12px; line-height: 1.7;
+  padding: 12px; resize: none; width: 100%; outline: none; transition: border-color .15s;
+  min-height: 120px; max-height: 260px; overflow-y: auto;
+}
+.json-area:focus { border-color: var(--accent); }
+.json-area.import-area { color: var(--ru); }
+
+/* Превью */
+.preview-list { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
+.preview-item {
+  display: grid; grid-template-columns: 46px 1fr 1fr; gap: 0;
+  border: 1px solid var(--border-soft); border-radius: var(--radius-sm);
+  overflow: hidden; background: var(--surface2);
+}
+.preview-item .pi-time {
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 9px; color: var(--text-muted); padding: 8px 3px;
+  background: var(--surface3); border-right: 1px solid var(--border-soft);
+  text-align: center;
+}
+.preview-item .pi-thai { padding: 7px 10px; border-right: 1px solid var(--border-soft); font-size: 13px; color: var(--thai); line-height: 1.5; }
+.preview-item .pi-ru { padding: 7px 10px; font-size: 12px; line-height: 1.5; }
+.preview-item .pi-ru.has-ru { color: var(--ru); }
+.preview-item .pi-ru.no-ru { color: var(--text-muted); font-style: italic; }
+
+/* Статус-строка */
+.status-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.status-dot.ok { background: var(--green); }
+.status-dot.warn { background: var(--yellow); }
+.status-dot.err { background: var(--red); }
+
+/* Пустое состояние */
+.no-session { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; flex: 1; color: var(--text-dim); padding: 60px; }
+.no-session .icon { font-size: 40px; opacity: .3; }
+.no-session p { font-size: 13px; }
+
+/* Toast */
+.toast { position: fixed; bottom: 20px; right: 20px; display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: var(--radius-sm); background: var(--surface2); border: 1px solid var(--border); font-size: 12px; color: var(--text); z-index: 500; transform: translateY(60px); opacity: 0; transition: all .22s; box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.green { border-color: var(--green); color: var(--green); }
+.toast.red { border-color: var(--red); color: var(--red); }
+
+/* Loading */
+.loading { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; gap: 10px; z-index: 1000; font-family: var(--mono); font-size: 13px; color: var(--text-dim); }
+.spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 700px) {
+  .page { grid-template-columns: 1fr; }
+  .left-col { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="logo"><div class="logo-dot"></div>GHOST</div>
+  <span style="font-size:12px;color:var(--text-dim)">Пакетный перевод</span>
+  <div class="sep"></div>
+  <button class="tb-btn" onclick="location.href='/'">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 8 8 12 12 16"/><line x1="16" y1="12" x2="8" y2="12"/></svg>
+    Запись
+  </button>
+  <button class="tb-btn" onclick="location.href='/sessions'">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    Чат
+  </button>
+</header>
+
+<div class="page">
+
+  <!-- Левая колонка -->
+  <aside class="left-col">
+    <div class="col-head">
+      <div class="col-title">Сессии</div>
+      <div class="search-box">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" placeholder="Поиск..." id="search-input" oninput="filterSessions(this.value)">
+      </div>
+    </div>
+    <div class="sessions-list" id="sessions-list">
+      <div style="text-align:center;padding:30px;color:var(--text-dim);font-size:12px">Загрузка...</div>
+    </div>
+  </aside>
+
+  <!-- Правая колонка -->
+  <div class="right-col" id="right-col">
+    <div class="no-session" id="no-session">
+      <div class="icon">📦</div>
+      <p>Выберите сессию слева</p>
+      <p style="font-size:11px;color:var(--text-muted)">Затем экспортируйте чанки для перевода</p>
+    </div>
+
+    <div id="work-area" style="display:none;flex-direction:column;height:100%;overflow:hidden;">
+
+      <div class="right-head">
+        <div>
+          <div class="right-title" id="rh-title">—</div>
+          <div class="right-meta" id="rh-meta">—</div>
+        </div>
+        <div class="rh-sep"></div>
+        <button class="btn btn-ghost" style="font-size:11px" onclick="location.href='/sessions'">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Открыть в чате
+        </button>
+      </div>
+
+      <div class="right-body">
+
+        <!-- Шаг 1: Настройка чанка -->
+        <div class="step-card">
+          <div class="step-header">
+            <div class="step-num">1</div>
+            <div>
+              <div class="step-title">Выберите чанк для экспорта</div>
+              <div class="step-sub">Разбейте сессию на части и выберите нужную</div>
+            </div>
+          </div>
+          <div class="step-body">
+            <div class="chunk-controls">
+              <label>Реплик в чанке:</label>
+              <select class="chunk-select" id="chunk-size" onchange="onChunkSizeChange()">
+                <option value="5">5</option>
+                <option value="10" selected>10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="0">Все</option>
+              </select>
+              <label>Сегмент:</label>
+              <select class="chunk-select" id="seg-filter" onchange="onSegFilterChange()">
+                <option value="-1">Все сегменты</option>
+              </select>
+              <div class="chunk-nav">
+                <button id="btn-prev" onclick="prevChunk()" disabled>← Пред.</button>
+                <span class="chunk-info" id="chunk-info">чанк 1 / 1</span>
+                <button id="btn-next" onclick="nextChunk()" disabled>След. →</button>
+              </div>
+            </div>
+            <!-- Превью чанка -->
+            <div class="preview-list" id="preview-list"></div>
+          </div>
+        </div>
+
+        <!-- Шаг 2: Экспорт -->
+        <div class="step-card">
+          <div class="step-header">
+            <div class="step-num">2</div>
+            <div>
+              <div class="step-title">Скопируйте JSON + промпт для LLM</div>
+              <div class="step-sub">Вставьте в ChatGPT, Claude или любую другую модель</div>
+            </div>
+          </div>
+          <div class="step-body">
+            <div class="prompt-box" id="prompt-box"></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn btn-ghost" id="btn-copy-prompt" onclick="copyPrompt()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                Копировать промпт + JSON
+              </button>
+              <button class="btn btn-ghost" id="btn-copy-json" onclick="copyJson()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                Только JSON
+              </button>
+            </div>
+            <textarea class="json-area" id="export-json" readonly rows="6" spellcheck="false"></textarea>
+          </div>
+        </div>
+
+        <!-- Шаг 3: Импорт -->
+        <div class="step-card">
+          <div class="step-header">
+            <div class="step-num">3</div>
+            <div>
+              <div class="step-title">Вставьте переведённый JSON</div>
+              <div class="step-sub">Модель вернёт тот же формат с полем <code style="font-family:var(--mono);font-size:11px;color:var(--accent)">translation</code></div>
+            </div>
+          </div>
+          <div class="step-body">
+            <textarea class="json-area import-area" id="import-json" rows="6" placeholder='[{"id":1,"translation":"Перевод..."},...]' spellcheck="false" oninput="validateImport()"></textarea>
+            <div class="status-row" id="import-status">
+              <div class="status-dot" id="import-dot"></div>
+              <span id="import-msg" style="color:var(--text-dim)">Вставьте JSON от LLM</span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-success" id="btn-apply" onclick="applyTranslations()" disabled>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Применить переводы
+              </button>
+              <button class="btn btn-ghost" onclick="clearImport()">Очистить</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Статистика сессии -->
+        <div class="step-card" id="stats-card" style="display:none">
+          <div class="step-header">
+            <div class="step-num" style="background:rgba(62,207,142,.15);border-color:var(--green);color:var(--green)">✓</div>
+            <div>
+              <div class="step-title">Прогресс перевода сессии</div>
+            </div>
+          </div>
+          <div class="step-body">
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px" id="stats-grid"></div>
+            <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden">
+              <div id="stats-bar" style="height:100%;background:var(--green);border-radius:2px;transition:width .4s"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="loading" id="loading"><div class="spinner"></div>Загрузка...</div>
+
+<script>
+let allSessions = [];
+let currentSession = null;
+let currentChunkIdx = 0;
+let chunkSize = 10;
+let segFilter = -1; // -1 = all
+let chunks = [];
+let parsedImport = null;
+
+/* ── Утилиты ── */
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtTime(sec){ const s=Math.floor(sec),m=Math.floor(s/60),ss=String(s%60).padStart(2,'0'); return `${m}:${ss}`; }
+function fmtDate(ts){ return new Date(ts*1000).toLocaleString('ru',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function toast(msg,type=''){ const el=document.getElementById('toast'); el.textContent=msg; el.className='toast show'+(type?' '+type:''); clearTimeout(el._t); el._t=setTimeout(()=>el.classList.remove('show'),2800); }
+
+/* ── Загрузка ── */
+async function refreshAll(){
+  try{
+    const r = await fetch('/api/sessions');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    allSessions = await r.json();
+    renderSidebar(allSessions);
+  } catch(e){ toast('Ошибка: '+e.message,'red'); }
+  finally{ document.getElementById('loading').style.display='none'; }
+}
+
+async function loadSession(id){
+  try{
+    const r = await fetch('/api/sessions/'+id);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    currentSession = await r.json();
+    currentChunkIdx = 0;
+    segFilter = -1;
+    renderSidebar(allSessions);
+    renderWorkArea();
+  } catch(e){ toast('Ошибка: '+e.message,'red'); }
+}
+
+/* ── Сайдбар ── */
+function renderSidebar(sessions){
+  const list = document.getElementById('sessions-list');
+  if(!sessions.length){ list.innerHTML='<div style="text-align:center;padding:30px;color:var(--text-dim);font-size:12px">Нет записей</div>'; return; }
+  list.innerHTML = sessions.map(s=>{
+    const pct = s.utterance_count>0 ? Math.round(s.translated_count/s.utterance_count*100) : 0;
+    const bc = pct===100?'done':pct>0?'partial':'';
+    const bt = pct===100?'✓':pct>0?`${pct}%`:`${s.utterance_count}р`;
+    const active = currentSession&&currentSession.id===s.id?' active':'';
+    return `<div class="si${active}" onclick="selectSession(${s.id})">
+      <div class="si-id">${esc(s.slug)}</div>
+      <div class="si-meta"><span class="badge">${s.segment_count}с</span><span class="badge ${bc}">${bt}</span></div>
+    </div>`;
+  }).join('');
+}
+
+function filterSessions(q){
+  renderSidebar(allSessions.filter(s=>s.slug.toLowerCase().includes(q.toLowerCase())));
+}
+function selectSession(id){ loadSession(id); }
+
+/* ── Рабочая область ── */
+function renderWorkArea(){
+  const s = currentSession;
+  if(!s) return;
+
+  document.getElementById('no-session').style.display = 'none';
+  const wa = document.getElementById('work-area');
+  wa.style.display = 'flex';
+
+  document.getElementById('rh-title').textContent = s.slug;
+  const totalU = s.segments.reduce((a,seg)=>a+seg.utterances.length,0);
+  const doneU  = s.segments.reduce((a,seg)=>a+seg.utterances.filter(u=>u.text_ru).length,0);
+  document.getElementById('rh-meta').textContent = `${s.segments.length} сег. · ${totalU} реплик · переведено ${doneU}`;
+
+  // Заполнить фильтр сегментов
+  const sf = document.getElementById('seg-filter');
+  sf.innerHTML = '<option value="-1">Все сегменты</option>' +
+    s.segments.map(seg => `<option value="${seg.index}">SEG ${String(seg.index).padStart(4,'0')}</option>`).join('');
+  sf.value = '-1';
+  segFilter = -1;
+
+  rebuildChunks();
+  renderStats();
+}
+
+function getFilteredUtterances(){
+  if(!currentSession) return [];
+  const segs = segFilter===-1 ? currentSession.segments : currentSession.segments.filter(seg=>seg.index===segFilter);
+  return segs.flatMap(seg => seg.utterances.map(u => ({...u, _segIdx: seg.index})));
+}
+
+function rebuildChunks(){
+  const utts = getFilteredUtterances();
+  const sz = chunkSize===0 ? utts.length : chunkSize;
+  chunks = [];
+  if(sz===0){ chunks = [[]]; }
+  else {
+    for(let i=0; i<utts.length; i+=sz) chunks.push(utts.slice(i,i+sz));
+  }
+  if(chunks.length===0) chunks = [[]];
+  if(currentChunkIdx >= chunks.length) currentChunkIdx = 0;
+  refreshChunkUI();
+}
+
+function refreshChunkUI(){
+  const chunk = chunks[currentChunkIdx] || [];
+  const total = chunks.length;
+
+  document.getElementById('chunk-info').textContent = `чанк ${currentChunkIdx+1} / ${total}`;
+  document.getElementById('btn-prev').disabled = currentChunkIdx === 0;
+  document.getElementById('btn-next').disabled = currentChunkIdx >= total-1;
+
+  // Превью
+  const pl = document.getElementById('preview-list');
+  if(!chunk.length){
+    pl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px">Нет реплик</div>';
+  } else {
+    pl.innerHTML = chunk.map(u => `<div class="preview-item">
+      <div class="pi-time">${fmtTime(u.start_sec)}</div>
+      <div class="pi-thai">${esc(u.text_thai)}</div>
+      <div class="pi-ru ${u.text_ru?'has-ru':'no-ru'}">${u.text_ru ? esc(u.text_ru) : 'нет перевода'}</div>
+    </div>`).join('');
+  }
+
+  // Промпт
+  const promptEl = document.getElementById('prompt-box');
+  promptEl.textContent = buildPrompt(chunk);
+
+  // JSON
+  const exportEl = document.getElementById('export-json');
+  const exportData = chunk.map(u => ({
+    id: u.id,
+    time: fmtTime(u.start_sec),
+    thai: u.text_thai,
+    ...(u.text_ru ? {existing_ru: u.text_ru} : {})
+  }));
+  exportEl.value = JSON.stringify(exportData, null, 2);
+  autoResizeTA(exportEl);
+}
+
+function buildPrompt(chunk){
+  const lang = 'русский';
+  return `Переведи следующие реплики с тайского на ${lang}. Верни ТОЛЬКО JSON-массив в том же формате, добавив поле "translation" с переводом к каждому объекту. Не меняй поля id, time, thai. Не добавляй пояснений — только JSON.\n\n${JSON.stringify(chunk.map(u=>({id:u.id,time:fmtTime(u.start_sec),thai:u.text_thai})),null,2)}`;
+}
+
+function onChunkSizeChange(){
+  chunkSize = parseInt(document.getElementById('chunk-size').value);
+  currentChunkIdx = 0;
+  rebuildChunks();
+}
+
+function onSegFilterChange(){
+  segFilter = parseInt(document.getElementById('seg-filter').value);
+  currentChunkIdx = 0;
+  rebuildChunks();
+}
+
+function prevChunk(){ if(currentChunkIdx>0){ currentChunkIdx--; refreshChunkUI(); } }
+function nextChunk(){ if(currentChunkIdx<chunks.length-1){ currentChunkIdx++; refreshChunkUI(); } }
+
+function autoResizeTA(ta){ ta.style.height='auto'; ta.style.height=Math.min(ta.scrollHeight,260)+'px'; }
+
+/* ── Копирование ── */
+async function copyPrompt(){
+  const text = document.getElementById('prompt-box').textContent;
+  await copyText(text, 'btn-copy-prompt', 'Промпт + JSON скопирован');
+}
+async function copyJson(){
+  const text = document.getElementById('export-json').value;
+  await copyText(text, 'btn-copy-json', 'JSON скопирован');
+}
+async function copyText(text, btnId, msg){
+  try{
+    await navigator.clipboard.writeText(text);
+    toast(msg,'green');
+    const btn = document.getElementById(btnId);
+    const orig = btn.textContent;
+    btn.style.color='var(--green)'; btn.style.borderColor='var(--green)';
+    setTimeout(()=>{ btn.style.color=''; btn.style.borderColor=''; },2000);
+  } catch(e){ toast('Ошибка копирования','red'); }
+}
+
+/* ── Импорт и применение ── */
+function validateImport(){
+  const raw = document.getElementById('import-json').value.trim();
+  const dot = document.getElementById('import-dot');
+  const msg = document.getElementById('import-msg');
+  const btn = document.getElementById('btn-apply');
+  parsedImport = null;
+
+  if(!raw){ dot.className='status-dot'; msg.textContent='Вставьте JSON от LLM'; msg.style.color='var(--text-dim)'; btn.disabled=true; return; }
+
+  try{
+    let data = JSON.parse(raw);
+    if(!Array.isArray(data)) throw new Error('Ожидается массив');
+    const valid = data.filter(item => typeof item.id === 'number' && typeof item.translation === 'string');
+    if(!valid.length) throw new Error('Нет объектов с полями id и translation');
+
+    parsedImport = valid;
+    dot.className='status-dot ok';
+    msg.textContent = `Готово: ${valid.length} переводов`;
+    msg.style.color = 'var(--green)';
+    btn.disabled = false;
+  } catch(e){
+    dot.className='status-dot err';
+    msg.textContent = 'Ошибка: '+e.message;
+    msg.style.color = 'var(--red)';
+    btn.disabled = true;
+  }
+}
+
+function clearImport(){
+  document.getElementById('import-json').value='';
+  validateImport();
+}
+
+async function applyTranslations(){
+  if(!parsedImport || !parsedImport.length) return;
+
+  const btn = document.getElementById('btn-apply');
+  btn.disabled = true;
+  btn.textContent = 'Сохраняем...';
+
+  let ok=0, err=0;
+  for(const item of parsedImport){
+    try{
+      const r = await fetch('/api/utterances/'+item.id+'/translation', {
+        method:'PATCH',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({text_ru: item.translation.trim() || null}),
+      });
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      updateLocal(item.id, item.translation.trim() || null);
+      ok++;
+    } catch(e){ err++; console.error('id',item.id,e); }
+  }
+
+  btn.textContent = 'Применить переводы';
+  btn.disabled = false;
+
+  if(err===0){
+    toast(`✓ Сохранено ${ok} переводов`,'green');
+    clearImport();
+  } else {
+    toast(`Сохранено ${ok}, ошибок ${err}`,'red');
+  }
+
+  renderStats();
+  rebuildChunks();
+}
+
+function updateLocal(uttId, val){
+  if(!currentSession) return;
+  for(const seg of currentSession.segments){
+    const u = seg.utterances.find(u=>u.id===uttId);
+    if(u){ u.text_ru=val; break; }
+  }
+}
+
+/* ── Статистика ── */
+function renderStats(){
+  const s = currentSession;
+  if(!s) return;
+  const statsCard = document.getElementById('stats-card');
+  statsCard.style.display = '';
+
+  const total = s.segments.reduce((a,seg)=>a+seg.utterances.length,0);
+  const done  = s.segments.reduce((a,seg)=>a+seg.utterances.filter(u=>u.text_ru).length,0);
+  const pct   = total>0 ? Math.round(done/total*100) : 0;
+
+  document.getElementById('stats-bar').style.width = pct+'%';
+  document.getElementById('stats-grid').innerHTML = `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Всего реплик</div>
+      <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--text)">${total}</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Переведено</div>
+      <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:var(--green)">${done}</div>
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+      <div style="font-size:10px;color:var(--text-dim);margin-bottom:4px">Прогресс</div>
+      <div style="font-family:var(--mono);font-size:20px;font-weight:700;color:${pct===100?'var(--green)':'var(--accent)'}">${pct}%</div>
+    </div>`;
+}
+
+refreshAll();
+</script>
+</body>
+</html>
