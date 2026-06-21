@@ -7,10 +7,12 @@ requires-python = ">=3.12"
 dependencies = [
     "faster-whisper>=1.2.1",
     "tqdm>=4.68.2",
+    "requests>=2.32.0",
 ]
 
 [project.optional-dependencies]
 # Apple Silicon Mac: uv sync --extra mac
 mac = [
-    "mlx-whisper>=0.4.0",
+    "mlx-whisper>=0.4.0",     # transcribe_thai_mac.py — транскрибация на GPU (Metal)
+    "mlx-lm>=0.19.0",         # translate_session.py — локальная LLM перевода на GPU (Metal)
 ]
